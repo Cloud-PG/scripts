@@ -63,9 +63,19 @@ export PATH=$PATH:/usr/libexec/condor
 #/etc/condor/config.d/99_local_tweaks
 #GSI_DAEMON_NAME=$(GSI_DAEMON_NAME),/DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=spiga/CN=606831/CN=Daniele Spiga
 
+#to be removed once added in the global conf
+export WN_TIMEOUT=30
 
 condor_master
 
+sleep 100
+
 while true; do
- sleep 1000
+    filedate=$(date -r /var/log/condor/StartLog +"%s")
+    curdate=$(date +"%s")
+    diffdate=$(date -u -d "0 $curdate seconds - $filedate seconds" +"%M")
+
+    if $diffdate > $WN_TIMEOUT;
+        then break;
+    fi
 done
