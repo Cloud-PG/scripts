@@ -75,7 +75,7 @@ while true; do
     curdate=$(date +"%s")
     diffdate=$(date -u -d "0 $curdate seconds - $filedate seconds" +"%M")
 
-    if $diffdate > $WN_TIMEOUT;
-        then break;
+    if [ $diffdate > $WN_TIMEOUT ]; then
+        break
     fi
 done
