@@ -3,38 +3,19 @@ yum -y install ca-policy-egi-core
 yum -y install ca-policy-lcg
 /etc/init.d/fetch-crl-boot restart 
 
+cd /etc/yum.repos.d
+wget https://ci.cloud.cnaf.infn.it/job/cnaf-mw-devel-jobs/job/ca_CMS-TTS-CA/job/master/lastSuccessfulBuild/artifact/ca_CMS-TTS-CA.repo
+cd -
+yum -y install ca_CMS-TTS-CA
 
-#curl... url-spiga
-mkdir /root/INDIGO_certs
-
-cd /root/INDIGO_certs
-
-wget http://cmsdoc.cern.ch/~spiga/INDIGO_certs/INDIGOCA.namespaces
-wget http://cmsdoc.cern.ch/~spiga/INDIGO_certs/INDIGOCA.pem
-wget http://cmsdoc.cern.ch/~spiga/INDIGO_certs/INDIGOCA.signing_policy
-
-cp /root/INDIGO_certs/* /etc/grid-security/certificates/
-
-cd /etc/grid-security/certificates/
-ln -s INDIGOCA.pem `openssl x509 -subject_hash -noout -in INDIGOCA.pem`.0 
-ln -s INDIGOCA.namespaces `openssl x509 -subject_hash -noout -in INDIGOCA.pem`.namespaces 
-ln -s INDIGOCA.signing_policy `openssl x509 -subject_hash -noout -in INDIGOCA.pem`.signing_policy
-cd
-
-rm -rf /root/INDIGO_certs/*
-
-####### commenti
-#resp=0
-#until [  $resp -eq 200 ]; do
-#    resp=$(curl -s \
-#        -w%{http_code} \
-#        $PROXY_CACHE/cgi-bin/get_proxy -o /root/gwms_proxy)
-#done
-#echo $resp
-##############
-
-#wget spiga-url-cert
-curl -L http://cmsdoc.cern.ch/~spiga/.x509up_u16858 -o /root/gwms_proxy
+resp=0
+until [  $resp -eq 200 ]; do
+    resp=$(curl -s \
+        -w%{http_code} \
+        $PROXY_CACHE/cgi-bin/get_proxy -o /root/gwms_proxy)
+done
+echo $resp
+#############
 
 chmod 600 /root/gwms_proxy
 
@@ -71,7 +52,6 @@ condor_master
 sleep 100
 
 while true; do
-    filedate=$(date -r /var/log/condor/StartLog +"%s")
     curdate=$(date +"%s")
     diffdate=$(date -u -d "0 $curdate seconds - $filedate seconds" +"%M")
 
