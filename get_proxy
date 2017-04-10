@@ -14,15 +14,15 @@ from StringIO import StringIO
 
 class ProxyManager(object):
 
-    def __init__(self, logging, iam_token):
+    def __init__(self, logging, iam_token, client_id, client_secret):
 
         self.iam_token = iam_token
         self.log = logging
         self.cache_dir = '/tmp/'
         self.token_expiration = 600000
         self.age = 20
-        self.client_id = ''
-        self.client_secret = ''
+        self.client_id = client_id
+        self.client_secret = client_secret
         self.audience = 'https://watts-dev.data.kit.edu'
         self.tts = 'https://watts-dev.data.kit.edu'
         self.iam_endpoint = 'https://iam-test.indigo-datacloud.eu/'
@@ -43,7 +43,6 @@ class ProxyManager(object):
         if exists and is up to date -> ok
         if no up to date -> refresh
         else -> exchange token
-        aggiungi controlli
         """
         if os.path.exists(self.tts_output_data):
             ctime = os.stat(self.tts_output_data).st_ctime
@@ -54,10 +53,10 @@ class ProxyManager(object):
             else:
                 return True
         else:
-            self.exchanged_token = self.get_exchange_token(self.client_id, self.client_secret, self.audience, self.token_endpoint, str(iam_token).split('\n', 1)[0])
+            self.exchanged_token = self.get_exchange_token(self.client_id, self.client_secret, self.audience, self.token_endpoint, self.iam_token)
             if isinstance(self.exchanged_token, int):
                 self.log.error("get_exchange_token error")
-                return "error"
+                return False 
             else:
                 TTS_data = self.get_TTS_data(self.exchanged_token)
 
@@ -74,43 +73,52 @@ class ProxyManager(object):
         data = json.dumps({"service_id": "x509"})
 
         headers = StringIO()
+        buffers = StringIO()
 
         c = pycurl.Curl()
         c.setopt(pycurl.URL, url)
         c.setopt(pycurl.HTTPHEADER, [bearer, 'Content-Type: application/json'])
         c.setopt(pycurl.POST, 1)
         c.setopt(pycurl.POSTFIELDS, data)
+        c.setopt(c.WRITEFUNCTION, buffers.write)
         c.setopt(c.HEADERFUNCTION, headers.write)
         c.setopt(c.VERBOSE, True)
-        c.perform()
 
-        status = c.getinfo(c.RESPONSE_CODE)
+        try:
+            c.perform()
+            status = c.getinfo(c.RESPONSE_CODE)
+            c.close()
+            body = buffers.getvalue()
+
+            if str(status) != "303" :
+                self.log.error("On \"get redirect curl\": %s , http error: %s " % (body, str(status)))
+                return False 
+        except pycurl.error, error:
+            errno, errstr = error
+            self.log.info('An error occurred: %s' % errstr)
+            return False
+        
         redirect = self.tts
-        c.close()
+        for item in headers.getvalue().split("\n"):
+            if "location" in item:
+                redirect = redirect + item.strip().replace("location: ", "")
 
-        result = 1
+                headers = {'Authorization': 'Bearer ' + self.exchanged_token.strip()}
+                response = requests.get(redirect, headers=headers)
 
-        if status == 303:
-            for item in headers.getvalue().split("\n"):
-                if "location" in item:
-                    redirect = redirect + item.strip().replace("location: ", "")
+                try:
+                    response.raise_for_status()
+                except requests.exceptions.HTTPError as e:
+                    # Whoops it wasn't a 200
+                    self.log.error("get_certificate() Error: %s " %str(e))
+                    return False
 
-                    headers = {'Authorization': 'Bearer ' + str(self.exchanged_token).split('\n', 1)[0]}
-                    response = requests.get(redirect, headers=headers)
+                with open('/tmp/output.json', 'w') as outf:
+                    outf.write(response.content)
+            else:
+                self.log.error("No location in redirect response")
 
-                    with open('/tmp/output.json', 'w') as outf:
-                        outf.write(response.content)
-                    return 0
-                else:
-                    result = 3
-        else:
-            self.log.error("On \"get redirect curl\", http error: " + status)
-            result = status
-
-        if result == 3:
-            self.log.error("No location in redirect response")
-
-        return result
+        return True
 
     def get_exchange_token(self, actor_id, actor_secret, audience, iam_token_endpoint, subject_token):
         """
@@ -124,20 +132,22 @@ class ProxyManager(object):
         data.add('subject_token', subject_token)
         data.add('scope', 'openid profile offline_access')
 
-        response = requests.post(iam_token_endpoint, data=data, auth=(actor_id, actor_secret), verify=False)
+        self.log.info("get_exchanged_token. Data: %s" % data)
+
+        response = requests.post(iam_token_endpoint, data=data, auth=(actor_id, actor_secret), verify=True)
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            # Whoops it wasn't a 200
+            self.log.error("get_exchange_token() Error: %s " %str(e))
+            return response.status_code
 
         result = json.loads(response.content)
 
-        if response.status_code == 200:
+        with open('/tmp/refresh_token', 'w') as outf:
+            outf.write(result["refresh_token"])
 
-            with open('/tmp/refresh_token', 'w') as outf:
-                outf.write(result["refresh_token"])
-
-            return result["access_token"]
-
-        else:
-            self.log.error("http error:" + response.status_code)
-            return response.status_code
+        return result["access_token"]
 
     def introspection(self, iam_client_id, iam_client_secret, exchanged_token):
         """
@@ -152,12 +162,17 @@ class ProxyManager(object):
         data.add('token', exchanged_token)
 
         response = requests.post(self.introspect_endpoint, data=data, auth=(iam_client_id, iam_client_secret), verify=False)
-        if response.status_code == 200:
-            with open('/tmp/introspection', 'w') as outf:
-                outf.write(response.content)
-        else:
+
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            # Whoops it wasn't a 200
+            self.log.error("introspection() Error: %s " %str(e))
             self.log.error("http error:" + response.status_code)
             return response.status_code
+
+        with open('/tmp/introspection', 'w') as outf:
+                outf.write(response.content)
 
     def refresh_token(self, iam_client_id, iam_client_secret, refresh_token):
         """
@@ -170,16 +185,21 @@ class ProxyManager(object):
         data.add('client_secret', iam_client_secret)
         data.add('grant_type', 'refresh_token')
         data.add('refresh_token', refresh_token)
+      
+        self.log.info("refresh_token. data: %s" % data)
 
-        response = requests.post(self.token_endpoint, data=data, verify=False)
-        status = response.status_code
+        response = requests.post(self.token_endpoint, data=data, verify=True)
 
-        if status == 200:
-            result = json.loads(response.content)
-            return result["access_token"]
-        else:
-            self.log.error("http error:" + status)
-            return status
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            # Whoops it wasn't a 200
+            self.log.error("refresh_token() Error: %s " %str(e))
+            self.log.error("http error:" + response.status_code)
+            return response.status_code
+
+        result = json.loads(response.content)
+        return result["access_token"]
 
     def get_TTS_data(self, exchanged_token, exchange=False):
         """
@@ -187,7 +207,6 @@ class ProxyManager(object):
         retrieve_tts_data
         release lock
         """
-
         if os.path.exists(self.lock_file):
             ctime = os.stat(self.lock_file).st_ctime
             age = time.time() - ctime
@@ -199,75 +218,65 @@ class ProxyManager(object):
                 os.remove(self.lock_file)
         open(self.lock_file, 'w+').close()
 
-        # aggiungi controlli ed eventuali lock
-
         if exchange:
             with file('/tmp/refresh_token') as f:
                 refresh_token = f.read()
-                self.exchanged_token = self.refresh_token(self.client_id, self.client_secret, str(refresh_token).split('\n', 1)[0])
+                self.exchanged_token = self.refresh_token(self.client_id, self.client_secret, refresh_token.strip())
                 if isinstance(self.exchanged_token, int):
                     self.log.error("refresh_token error")
 
-        self.get_certificate(self.credential_endpoint)
+        if self.get_certificate(self.credential_endpoint):
+            # load json and prepare objects
+            with open('/tmp/output.json') as tts_data_file:
+                tts_data = json.load(tts_data_file)
+ 
+            f = open(self.user_cert, 'w+')
+            f.write(str(tts_data['credential']['entries'][0]['value']))
+            f.close()
+ 
+            f = open(self.user_key, 'w+')
+            f.write(str(tts_data['credential']['entries'][1]['value']))
+            f.close()
+ 
+            f = open(self.user_passwd, 'w+')
+            f.write(str(tts_data['credential']['entries'][2]['value']))
+            f.close()
+ 
+            try:
+                os.chmod(self.user_key, 0600)
+            except OSError, e:
+                self.log.error(e)
+                self.log.error("Permission denied to chmod passwd file")
+                return False
+ 
+            os.remove(self.lock_file)
+ 
+            return True
+        else:
+            return False
 
-        # load json and prepare objects
-        with open('/tmp/output.json') as tts_data_file:
-            tts_data = json.load(tts_data_file)
-
-        f = open(self.user_cert, 'w+')
-        f.write(str(tts_data['credential']['entries'][0]['value']))
-        f.close()
-
-        f = open(self.user_key, 'w+')
-        f.write(str(tts_data['credential']['entries'][1]['value']))
-        f.close()
-
-        f = open(self.user_passwd, 'w+')
-        f.write(str(tts_data['credential']['entries'][2]['value']))
-        f.close()
-
-        try:
-            os.chmod(self.user_key, 0600)
-        except OSError, e:
-            self.log.error(e)
-            self.log.error("Permission denied to chmod passwd file")
-            return None
-
-        os.remove(self.lock_file)
-
-        return True
 
     def generate_proxy(self):
         """
         if no errors, generate proxy with grid-proxy-init
         """
-        tts = self.check_TTS_data()
+        if self.check_TTS_data():
+            self.log.debug("Generating proxy for %s" % self.exchanged_token)
 
-        if tts != "error":
-
-            print tts
-            if tts:
-                logging.debug("Generating proxy for %s" % self.exchanged_token)
-
-                command = "grid-proxy-init -valid 160:00 -key %s -cert %s  -out %s  -pwstdin " % (self.user_key, self.user_cert, self.user_proxy)
-                my_stdin = open(self.user_passwd)
-                my_passwd = my_stdin.read()
-                my_stdin.close()
-                proxy_init = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                proxy_out, proxy_err = proxy_init.communicate(input=my_passwd)
-                proxy_result = proxy_init.returncode
-                if proxy_result > 0:
-                    logging.error("grid-proxy-init failed for %s" % self.exchanged_token)
-                    try:
-                        pass
-                    except OSError:
-                        pass
-                    return None
-                return self.user_proxy
-            else:
+            command = "grid-proxy-init -valid 160:00 -key %s -cert %s  -out %s  -pwstdin " % (self.user_key, self.user_cert, self.user_proxy)
+            my_stdin = open(self.user_passwd)
+            my_passwd = my_stdin.read()
+            my_stdin.close()
+            proxy_init = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            proxy_out, proxy_err = proxy_init.communicate(input=my_passwd)
+            proxy_result = proxy_init.returncode
+            if proxy_result > 0:
+                self.log.error("grid-proxy-init failed for %s" % self.exchanged_token)
                 return None
-	else:
-	    self.log("error in check_TTS_data")
+            return self.user_proxy
+        else:
+	    self.log.info("error in check_TTS_data")
+            return None 
 
 if __name__ == '__main__':
 
@@ -277,9 +286,15 @@ if __name__ == '__main__':
 
     # imports the non-exchanged access token
     with file('/tmp/iamtoken') as f:
-        iam_token = f.read()
+        iam_token = f.read().strip()
 
-    proxy_manager = ProxyManager(logging, iam_token)
+    with file('/tmp/client_id') as f:
+        client_id = f.read().strip()
+
+    with file('/tmp/client_secret') as f:
+        client_secret = f.read().strip()
+
+    proxy_manager = ProxyManager(logging, iam_token, client_id, client_secret)
 
     logging.info(iam_token)
 
