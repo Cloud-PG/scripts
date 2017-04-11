@@ -52,6 +52,7 @@ condor_master
 sleep 100
 
 while true; do
+    filedate=$(date -r /var/log/condor/StartLog +"%s")
     curdate=$(date +"%s")
     diffdate=$(date -u -d "0 $curdate seconds - $filedate seconds" +"%M")
 
