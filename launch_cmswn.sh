@@ -49,16 +49,12 @@ export PATH=$PATH:/usr/libexec/condor
 
 condor_master
 
-export WN_TIMEOUT=30
+export WN_TIMEOUT=60
 while true; do
-    sleep 180
-
-    filedate=$(date -r /var/log/condor/StartLog +"%s")
-    curdate=$(date +"%s")
-    diffdate=$(date -u -d "0 $curdate seconds - $filedate seconds" +"%M")
-
-    if [ $diffdate > $WN_TIMEOUT ]
-    then
+    sleep 600
+    cmd=$(find /var/log/condor -type f -name StartLog -mmin -$WN_TIMEOUT)
+    if [ -z $cmd ]; then
         break
     fi
 done
+
