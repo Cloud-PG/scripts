@@ -98,7 +98,7 @@ class ProxyManager(object):
             self.log.info('An error occurred: %s' % errstr)
             return False
         
-        redirect = self.tts
+        redirect = ""
         for item in headers.getvalue().split("\n"):
             if "location" in item:
                 redirect = redirect + item.strip().replace("location: ", "")
