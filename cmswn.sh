@@ -42,12 +42,24 @@ if [ $? -eq 0 ]; then
 
     condor_master
     export WN_TIMEOUT=60
+    COUNTER=0
+
+    ###Check CVMFS status every 5s as it can create a black hole
+    ###Check every 10 minutes if cmsRun executed at least once in the past hour. 
     while true; do
-        sleep 600
-        cmd=$(find /var/log/condor -type f -name StartLog -mmin -$WN_TIMEOUT)
-        if [ -z $cmd ]; then
+        if [ ! -f /cvmfs/cms.cern.ch/cmsset_default.sh ];then
+            echo "CVMFS is down.. break docker execution"
             break
         fi
+        if [ "$COUNTER" == "120" ];then
+            COUNTER=0
+            cmd=$(find /var/log/condor -type f -name StartLog -mmin -$WN_TIMEOUT)
+            if [ -z $cmd ]; then
+                break
+            fi
+        fi
+        let COUNTER=COUNTER+1
+        sleep 5
     done
 else
     echo "proxy certificate is Failure"
