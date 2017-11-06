@@ -1,15 +1,17 @@
 #!/bin/env python
 
-import os
 import json
+import logging
+import os
+import subprocess
 import sys
 import time
-import logging
-import subprocess
-import pycurl
+from StringIO import StringIO
+
 import requests
 from urllib3._collections import HTTPHeaderDict
-from StringIO import StringIO
+
+import pycurl
 
 
 class ProxyManager(object):
@@ -284,19 +286,15 @@ if __name__ == '__main__':
 
     logging.info("Calling retrieve_proxy")
 
-    # imports the non-exchanged access token
-    with file('/tmp/iamtoken') as f:
-        iam_token = f.read().strip()
+    # imports tokens, id and secret
+    IAM_TOKEN = os.environ.get("IAM_TOKEN", None)
+    REFRESH_TOKEN = os.environ.get("IAM_REFRESH_TOKEN", None)
+    CLIENT_ID = os.environ.get("IAM_CLIENT_ID", None)
+    CLIENT_SECRET = os.environ.get("IAM_CLIENT_SECRET", None)
 
-    with file('/tmp/client_id') as f:
-        client_id = f.read().strip()
+    proxy_manager = ProxyManager(logging, IAM_TOKEN, CLIENT_ID, CLIENT_SECRET)
 
-    with file('/tmp/client_secret') as f:
-        client_secret = f.read().strip()
-
-    proxy_manager = ProxyManager(logging, iam_token, client_id, client_secret)
-
-    logging.info(iam_token)
+    logging.info(IAM_TOKEN)
 
     print "Content-type: application/octet-stream\n\n"
     print "Content-Disposition: attachment; filename=.pem"
