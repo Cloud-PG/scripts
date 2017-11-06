@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
     logging.basicConfig(filename='/var/log/ttscache/certcache.log', format='%(asctime)s: [%(levelname)s] %(message)s', level=logging.DEBUG)
 
-    logging.info("Calling retrieve_proxy")
+    logging.info("CALLING GET PROXY")
 
     # imports tokens, id and secret
     IAM_TOKEN = os.environ.get("IAM_TOKEN", None)
