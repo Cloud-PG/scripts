@@ -1,3 +1,4 @@
+#!/bin/env python
 """This script requires the following environment variables:
 
   - IAM_TOKEN
@@ -6,7 +7,6 @@
   - IAM_CLIENT_SECRET
 
 """
-#!/bin/env python
 from __future__ import print_function
 
 import json

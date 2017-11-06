@@ -28,7 +28,7 @@ RUN yum --setopt=tsflags=nodocs -y install python \
     pip install --upgrade pip && \
     pip install requests
 # GET_PROXY SCRIPT
-COPY get_proxy /var/www/cgi-bin
+COPY ./get_proxy /var/www/cgi-bin
 RUN chmod -v +x /var/www/cgi-bin/get_proxy
 # SCRIPT LOG DIR AND FILE
 RUN mkdir -p /var/log/ttscache/ && \
@@ -36,7 +36,7 @@ RUN mkdir -p /var/log/ttscache/ && \
     chown -R apache:apache /var/log/ttscache
 # APACHE FOREGROUND SCRIPT
 WORKDIR /usr/local/bin
-COPY run-httpd.sh /usr/local/bin
+COPY ./run-httpd.sh /usr/local/bin
 RUN chmod -v +x /usr/local/bin/run-httpd.sh
 
 WORKDIR /root
