@@ -1,4 +1,5 @@
 #!/bin/env python
+from __future__ import print_function
 
 import json
 import logging
@@ -282,7 +283,7 @@ class ProxyManager(object):
 
 if __name__ == '__main__':
 
-    logging.basicConfig(filename='/tmp/pcache.log', format='%(asctime)s: [%(levelname)s] %(message)s', level=logging.DEBUG)
+    logging.basicConfig(filename='/var/log/ttscache/certcache.log', format='%(asctime)s: [%(levelname)s] %(message)s', level=logging.DEBUG)
 
     logging.info("Calling retrieve_proxy")
 
@@ -292,21 +293,24 @@ if __name__ == '__main__':
     CLIENT_ID = os.environ.get("IAM_CLIENT_ID", None)
     CLIENT_SECRET = os.environ.get("IAM_CLIENT_SECRET", None)
 
-    proxy_manager = ProxyManager(logging, IAM_TOKEN, CLIENT_ID, CLIENT_SECRET)
+    logging.info("IAM TOKEN = {}".format(IAM_TOKEN))
+    logging.info("IAM REFRESH TOKEN = {}".format(REFRESH_TOKEN))
+    logging.info("IAM CLIENT = {}".format(CLIENT_ID))
+    logging.info("IAM CLIENT SECRET = {}".format(CLIENT_SECRET))
 
-    logging.info(IAM_TOKEN)
+    PROXY_MANAGER = ProxyManager(logging, IAM_TOKEN, CLIENT_ID, CLIENT_SECRET)
 
-    print "Content-type: application/octet-stream\n\n"
-    print "Content-Disposition: attachment; filename=.pem"
-    print
-    proxy_file = proxy_manager.generate_proxy()
+    print("Content-type: application/octet-stream\n\n")
+    print("Content-Disposition: attachment; filename=.pem")
+    print()
+    PROXY_FILE = PROXY_MANAGER.generate_proxy()
 
-    if proxy_file is not None:
-        proxy = open(proxy_file, 'rb').read()
-        print proxy
+    if PROXY_FILE is not None:
+        with open(PROXY_FILE, 'rb') as proxy_file:
+            print(proxy_file.read())
     else:
         logging.error("Cannot find Proxy file")
-        print "Content-type: text/html"
-        print
-        print "<p>grid-proxy-info failed </p>"
+        print("Content-type: text/html")
+        print()
+        print("<p>grid-proxy-info failed</p>")
     sys.exit()
