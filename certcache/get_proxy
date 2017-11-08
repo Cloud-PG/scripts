@@ -36,8 +36,8 @@ class ProxyManager(object):
             'server': env.get('MARATHON_SERVER'),
             'user': env.get('MARATHON_USER'),
             'passwd': env.get('MARATHON_PASSWD'),
-            'app_name': "certcache",
-            'api_url': "https://{}:8443/v2/apps/{}"
+            'app_name': env.get('MARATHON_APP_ID'),
+            'api_url': "https://{}:8443/v2/apps{}"
         }
         self.cache_dir = '/tmp/'
         self.token_expiration = 600000
@@ -60,8 +60,8 @@ class ProxyManager(object):
         """Interface to marathon REST API.
 
         This method can call only /v2/apps/{app_id} where
-        app_id is certcache. See marathon attribute in __init__
-        for more details.
+        app_id is passed by Marathon framework as environment
+        variable.
         
         Params:
             method (string): an accepted method for the marathon API
@@ -76,7 +76,8 @@ class ProxyManager(object):
                 }
             })
 
-            This function will call the following URL:
+            This function will call the following URL, because this script run
+            in certcache marathon app:
                 "https://MARATHON_SERVER:8443/v2/apps/certcache"
             
             with method patch and the passing data.
