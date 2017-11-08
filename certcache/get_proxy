@@ -7,7 +7,6 @@
   - IAM_CLIENT_SECRET
   - MARATHON_USER
   - MARATHON_PASSWD
-  - MARATHON_SERVER
 
 """
 from __future__ import print_function
@@ -33,11 +32,10 @@ class ProxyManager(object):
         self.client_id = env.get('IAM_CLIENT_ID')
         self.client_secret = env.get('IAM_CLIENT_SECRET')
         self.marathon = {
-            'server': env.get('MARATHON_SERVER'),
             'user': env.get('MARATHON_USER'),
             'passwd': env.get('MARATHON_PASSWD'),
             'app_name': env.get('MARATHON_APP_ID'),
-            'api_url': "https://{}:8443/v2/apps{}"
+            'api_url': "https://marathon.service.consul:8443/v2/apps{}"
         }
         self.cache_dir = '/tmp/'
         self.token_expiration = 600000
@@ -78,7 +76,7 @@ class ProxyManager(object):
 
             This function will call the following URL, because this script run
             in certcache marathon app:
-                "https://MARATHON_SERVER:8443/v2/apps/certcache"
+                "https://marathon.service.consul:8443/v2/apps/certcache"
             
             with method patch and the passing data.
             In data will be inserted automatically the app id
@@ -96,7 +94,6 @@ class ProxyManager(object):
                 logging.info("Selecting method: {}".format(method))
                 
                 full_api_url = self.marathon['api_url'].format(
-                    self.marathon['server'],
                     self.marathon['app_name']
                 )
                 logging.info("Using URL: {}".format(full_api_url))
@@ -381,7 +378,6 @@ if __name__ == '__main__':
         'CLIENT_SECRET': os.environ.get("IAM_CLIENT_SECRET", None)
         'MARATHON_USER': os.environ.get("MARATHON_USER", None)
         'MARATHON_PASSWD': os.environ.get("MARATHON_PASSWD", None)
-        'MARATHON_SERVER': os.environ.get("MARATHON_SERVER", None)
     }
 
     logging.info("IAM_TOKEN = {}".format(ENV.get('IAM_TOKEN')))
@@ -390,7 +386,6 @@ if __name__ == '__main__':
     logging.info("IAM_CLIENT_SECRET = {}".format(ENV.get('CLIENT_SECRET')))
     logging.info("MARATHON_USER = {}".format(ENV.get('MARATHON_USER')))
     logging.info("MARATHON_PASSWD = {}".format(ENV.get('MARATHON_PASSWD')))
-    logging.info("MARATHON_SERVER = {}".format(ENV.get('MARATHON_SERVER')))
 
     PROXY_MANAGER = ProxyManager(ENV)
 
