@@ -80,12 +80,12 @@ class ProxyManager(object):
         self.token_endpoint = self.iam_endpoint + 'token'
         self.introspect_endpoint = self.iam_endpoint + 'introspect'
         self.credential_endpoint = 'https://watts.data.kit.edu/api/v2/iam/credential'
-        self.tts_output_data = '%s/output.json' % self.cache_dir
-        self.lock_file = "%s/lock" % self.cache_dir
-        self.user_cert = "%s/usercert.crt" % self.cache_dir
-        self.user_key = "%s/userkey.key" % self.cache_dir
-        self.user_passwd = "%s/userpasswd.txt" % self.cache_dir
-        self.user_proxy = "%s/userproxy.pem" % self.cache_dir
+        self.tts_output_data = '{}/output.json'.format(self.cache_dir)
+        self.lock_file = "{}/lock".format(self.cache_dir)
+        self.user_cert = "{}/usercert.crt".format(self.cache_dir)
+        self.user_key = "{}/userkey.key".format(self.cache_dir)
+        self.user_passwd = "{}/userpasswd.txt".format(self.cache_dir)
+        self.user_proxy = "{}/userproxy.pem".format(self.cache_dir)
         self.exchanged_token = ""
     
     def __del__(self):
@@ -144,30 +144,30 @@ class ProxyManager(object):
             and will be converted to JSON string.
         """
         try:
-            logging.info("METHOD: call_marathon_api")
+            logging.debug("METHOD: call_marathon_api")
             with requests.Session() as session:
                 session.auth(self.marathon['user'], self.marathon['passwd'])
-                logging.info("Using user: '%s' and passwd: '%s'",
+                logging.debug("Using user: '%s' and passwd: '%s'",
                              self.marathon['user'], self.marathon['passwd'])
 
                 selected_method = getattr(session, method)
-                logging.info("Selecting method: %s", method)
+                logging.debug("Selecting method: %s", method)
 
                 full_api_url = self.marathon['api_url'].format(
                     self.marathon['app_name']
                 )
-                logging.info("Using URL: %s", full_api_url)
+                logging.debug("Using URL: %s", full_api_url)
 
                 data['id'] = "/{}".format(self.marathon['app_name'])
                 json_data = json.dumps(data)
-                logging.info("JSON data: %s", json_data)
+                logging.debug("JSON data: %s", json_data)
 
                 res = selected_method(
                     full_api_url,
                     data=json_data,
                     verify=False  # Required to not verify the SSL certificate
                 )
-                logging.info("Marathon response: %s", res)
+                logging.debug("Marathon response: %s", res)
 
         except requests.exceptions.RequestException as exc:
             logging.error("Requests exception in call_marathon_api: '%s'", exc)
@@ -181,21 +181,26 @@ class ProxyManager(object):
                 - if it's not up to date -> refresh
                 - else -> exchange token
         """
+        logging.debug("Check tts output data: %s", self.tts_output_data)
         if os.path.exists(self.tts_output_data):
             ctime = os.stat(self.tts_output_data).st_ctime
             since = time.time() - ctime
+            logging.debug("Check expiration time: %s > %s", since, self.token_expiration)
             if since > self.token_expiration:
-                logging.debug("Token about to expire. Need refreshing")
+                logging.debug("Token about to expire. Get tts data...")
                 tts_data = self.get_tts_data(True)
             else:
+                logging.debug("Token OK.")
                 return True
         else:
+            logging.debug("Token not exist, get exchange token...")
             self.exchanged_token = self.get_exchange_token()
             if isinstance(self.exchanged_token, int):
-                logging.error("Get_exchange_token error: %s",
+                logging.error("Get exchange token error: %s",
                               self.exchanged_token)
                 return False
             else:
+                logging.debug("Token OK.")
                 tts_data = self.get_tts_data(self.exchanged_token)
 
         return tts_data
@@ -217,9 +222,11 @@ class ProxyManager(object):
             str(self.exchanged_token).split('\n', 1)[0]
         data = json.dumps({"service_id": "x509"})
 
+        logging.debug("Create headers and buffers")
         headers = StringIO()
         buffers = StringIO()
 
+        logging.debug("Prepare CURL")
         curl = pycurl.Curl()
         curl.setopt(pycurl.URL, url)
         curl.setopt(pycurl.HTTPHEADER, [
@@ -231,23 +238,30 @@ class ProxyManager(object):
         curl.setopt(curl.VERBOSE, True)
 
         try:
+            logging.debug("Perform CURL call")
             curl.perform()
             status = curl.getinfo(curl.RESPONSE_CODE)
+            logging.debug("Result status: %s", status)
+            logging.debug("Close CURL")
             curl.close()
+            logging.debug("Get body content")
             body = buffers.getvalue()
+            logging.debug("Body: %s", body)
 
             if str(status) != "303":
                 logging.error(
-                    "On 'get redirected with curl': %s, http error: %s", body, str(status))
+                    "On 'get redirected with curl': http error: %s", str(status))
                 return False
         except pycurl.error as error:
             errno, errstr = error
-            logging.info('A pycurl error n. %s occurred: %s', errno, errstr)
+            logging.error('A pycurl error n. %s occurred: %s', errno, errstr)
             return False
-
+        
+        logging.debug("Manage redirect")
         redirect = self.tts
         for item in headers.getvalue().split("\n"):
             if "location" in item:
+                logging.debug("Redirect location %s", item)
                 redirect = redirect + item.strip().replace("location: ", "")
 
                 headers = {'Authorization': 'Bearer ' +
@@ -258,7 +272,7 @@ class ProxyManager(object):
                     response.raise_for_status()
                 except requests.exceptions.HTTPError as err:
                     # Whoops it wasn't a 200
-                    logging.error("Error in get_certificate(): %s", str(err))
+                    logging.error("Error in get certificate redirect: %s", str(err))
                     return False
 
                 with open('/tmp/output.json', 'w') as outf:
@@ -277,13 +291,16 @@ class ProxyManager(object):
         TO DO:
             - Add controls (aggiungi controlli)
         """
+
+        logging.debug("Prepare header")
+
         data = HTTPHeaderDict()
         data.add('grant_type', 'urn:ietf:params:oauth:grant-type:token-exchange')
         data.add('audience', self.audience)
         data.add('subject_token', self.iam_token)
         data.add('scope', 'openid profile offline_access')
 
-        logging.info("Call get_exchanged_token with data: %s", data)
+        logging.debug("Call get exchanged token with data: %s", data)
 
         response = requests.post(self.token_endpoint, data=data, auth=(
             self.client_id, self.client_secret), verify=True)
@@ -291,11 +308,13 @@ class ProxyManager(object):
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
             # Whoops it wasn't a 200
-            logging.error("Error in get_exchange_token: %s", err)
+            logging.error("Error in get exchange token: %s", err)
             return response.status_code
 
         result = json.loads(response.content)
+        logging.debug("Result: %s", result)
 
+        logging.debug("Override refresh token")
         with open('/tmp/refresh_token', 'w') as outf:
             outf.write(result["refresh_token"])
 
@@ -351,7 +370,7 @@ class ProxyManager(object):
         data.add('grant_type', 'refresh_token')
         data.add('refresh_token', refresh_token)
 
-        logging.info("refresh_token. data: %s", data)
+        logging.debug("Refresh token. data: %s", data)
 
         response = requests.post(self.token_endpoint, data=data, verify=True)
 
@@ -363,7 +382,8 @@ class ProxyManager(object):
             logging.error("HTTP error. Response status: %s",
                           response.status_code)
             return response.status_code
-
+        
+        logging.debug("Response content: %s", response.content)
         result = json.loads(response.content)
         return result["access_token"]
 
@@ -378,26 +398,33 @@ class ProxyManager(object):
         Params:
             exchange (Bool): indicate if we have to do the exchange
         """
+        logging.debug("Check lock file %s", self.lock_file)
         if os.path.exists(self.lock_file):
             ctime = os.stat(self.lock_file).st_ctime
             age = time.time() - ctime
+            logging.debug("Check age of %s: %s < %s", self.lock_file, age, self.age)
             if age < self.age:
-                logging.error("Update already in progres. Sleeping ...")
+                logging.debug("Update in progres. Go to sleep...")
                 time.sleep(self.age - age)
             else:
-                logging.error("Stale lock file, removing ...")
+                logging.debug("Stale lock file. Removing %s...", self.lock_file)
                 os.remove(self.lock_file)
+        logging.debug("Update last use time of %s", self.lock_file)
         open(self.lock_file, 'w+').close()
 
         if exchange:
+            logging.debug("Exchange /tmp/refresh_token")
             with file('/tmp/refresh_token') as refresh_t_file:
                 refresh_token = refresh_t_file.read()
+                logging.debug("Refresh token")
                 self.exchanged_token = self.refresh_token(refresh_token.strip())
                 if isinstance(self.exchanged_token, int):
                     logging.error("Error in refresh_token")
-
+        
+        logging.debug("Refresh token")
         if self.get_certificate(self.credential_endpoint):
-            # load json and prepare objects
+            
+            logging.debug("Load json and prepare objects")
             with open('/tmp/output.json') as tts_data_file:
                 tts_data = json.load(tts_data_file)
 
@@ -414,12 +441,14 @@ class ProxyManager(object):
                     str(tts_data['credential']['entries'][2]['value']))
 
             try:
+                logging.debug("Change user key mod")
                 os.chmod(self.user_key, 0o600)
             except OSError as err:
                 logging.error(
                     "Permission denied to chmod passwd file: %s", err)
                 return False
-
+            
+            logging.debug("Remove lock")
             os.remove(self.lock_file)
 
             return True
@@ -430,7 +459,7 @@ class ProxyManager(object):
         """Generates proxy with grid-proxy-init only if there are not errors."""
 
         if self.check_tts_data():
-            logging.info("Generating proxy for %s", self.exchanged_token)
+            logging.debug("Generating proxy for %s", self.exchanged_token)
 
             command = "grid-proxy-init -valid 160:00 -key {} -cert {} -out {} -pwstdin ".format(
                 self.user_key, self.user_cert, self.user_proxy
@@ -444,7 +473,11 @@ class ProxyManager(object):
                 stderr=subprocess.PIPE,
                 shell=True
             )
+
+            logging.debug("Execute proxy")
             proxy_out, proxy_err = proxy_init.communicate(input=my_passwd)
+
+            logging.debug("Proxy result: %s", proxy_init.returncode)
             if proxy_init.returncode > 0:
                 logging.error("grid-proxy-init failed for token %s",
                               self.exchanged_token)
@@ -453,7 +486,7 @@ class ProxyManager(object):
             else:
                 return self.user_proxy
         else:
-            logging.info("Error occured in check_tts_data!")
+            logging.error("Error occured in check_tts_data!")
 
 
 if __name__ == '__main__':
