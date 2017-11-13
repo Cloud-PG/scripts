@@ -11,6 +11,7 @@
 """
 from __future__ import print_function
 
+import ast
 import json
 import logging
 import os
@@ -23,6 +24,7 @@ import requests
 from urllib3._collections import HTTPHeaderDict
 
 import pycurl
+from kazoo.client import KazooClient
 
 
 class ProxyManager(object):
@@ -30,6 +32,7 @@ class ProxyManager(object):
     """Manager of tokens."""
 
     def __init__(self, env):
+        # Get all environment variables
         self.iam_token = env.get('IAM_TOKEN')
         self.client_id = env.get('IAM_CLIENT_ID')
         self.client_secret = env.get('IAM_CLIENT_SECRET')
@@ -39,6 +42,35 @@ class ProxyManager(object):
             'app_name': env.get('MARATHON_APP_ID'),
             'api_url': "https://marathon.service.consul:8443/v2/apps{}"
         }
+        self.zookeeper_host_list = None
+        self.zk_client = None
+
+        ##
+        # kazoo client needs a string with the list of zookeeper hosts
+        # divided by a comma. This little piece of code converts the
+        # list given as environment variable to a proper kazoo host string
+        # and starts the connection only if ZOOKEEPER_HOST_LIST is not None.
+        # In this phase we also prepare the zookeeper nodes to store variables.
+        #
+        # SOURCE: https://kazoo.readthedocs.io/en/latest/api/client.html#kazoo.client.KazooClient
+        #
+        # EXAMPLE:
+        #   host1:port1,host2:port2,host3:port3
+        #
+        # NOTE:
+        #   In zookeeper cms cluser are present these children from root ("/") node:
+        #      ["marathon", "mesos", "zookeeper"]
+        #   So path like "/marathon", "/mesos", "/zookeeper" are already available
+        #
+        if env.get('ZOOKEEPER_HOST_LIST') is not None:
+            host_list = ast.literal_eval(env.get('ZOOKEEPER_HOST_LIST'))
+            self.zookeeper_host_list = ",".join(
+                [host+":2181" for host in host_list]
+            )
+            self.zk_client = KazooClient(hosts=self.zookeeper_host_list)
+            self.zk_client.start()
+            self.zk_client.ensure_path("/marathon/refresh_token")
+
         self.cache_dir = '/tmp/'
         self.token_expiration = 600000
         self.age = 20
@@ -55,6 +87,33 @@ class ProxyManager(object):
         self.user_passwd = "%s/userpasswd.txt" % self.cache_dir
         self.user_proxy = "%s/userproxy.pem" % self.cache_dir
         self.exchanged_token = ""
+    
+    def __del__(self):
+        """Ensure to close all connection like zookeeper."""
+        self.zk_client.stop()
+    
+    def zk_set_refresh_token(self, value):
+        """Set the refresh token variable into the zookeeper environment.
+        
+        Params:
+            value (string): the value of the refresh token
+        
+        Returns:
+            kazoo.protocol.states.ZnodeStat
+
+        """
+        return self.zk_client.set("/marathon/refresh_token", value)
+    
+    def zk_get_refresh_token(self):
+        """Returns the refresh token string.
+        
+        Notes:
+            The method get of zk_client returns a byte string that have
+            to be converted into a string with the method decode.
+        """
+        value, z_node_stat = self.zk_client.get("/marathon/refresh_token")
+        return value.decode("utf-8")
+        
 
     def call_marathon_api(self, method, data):
         """Interface to marathon REST API.
@@ -411,7 +470,8 @@ if __name__ == '__main__':
         'CLIENT_ID': os.environ.get("IAM_CLIENT_ID", None),
         'CLIENT_SECRET': os.environ.get("IAM_CLIENT_SECRET", None),
         'MARATHON_USER': os.environ.get("MARATHON_USER", None),
-        'MARATHON_PASSWD': os.environ.get("MARATHON_PASSWD", None)
+        'MARATHON_PASSWD': os.environ.get("MARATHON_PASSWD", None),
+        'ZOOKEEPER_HOST_LIST': os.environ.get("ZOOKEEPER_HOST_LIST", None),
     }
 
     logging.info("IAM_TOKEN = %s", ENV.get('IAM_TOKEN'))
@@ -420,6 +480,7 @@ if __name__ == '__main__':
     logging.info("IAM_CLIENT_SECRET = %s", ENV.get('CLIENT_SECRET'))
     logging.info("MARATHON_USER = %s", ENV.get('MARATHON_USER'))
     logging.info("MARATHON_PASSWD = %s", ENV.get('MARATHON_PASSWD'))
+    logging.info("ZOOKEEPER_HOST_LIST = %s", ENV.get('ZOOKEEPER_HOST_LIST'))
 
     PROXY_MANAGER = ProxyManager(ENV)
 

@@ -26,7 +26,8 @@ RUN yum --setopt=tsflags=nodocs -y install python \
     python-pip \
     httpd && \
     pip install --upgrade pip && \
-    pip install requests
+    pip install requests && \
+    pip install kazoo
 # GET_PROXY SCRIPT
 COPY ./get_proxy /var/www/cgi-bin
 RUN chmod -v +x /var/www/cgi-bin/get_proxy
