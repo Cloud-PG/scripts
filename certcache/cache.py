@@ -1,12 +1,11 @@
 """Module for caching variables in different stores."""
-from abc import ABCMeta
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from ast import literal_eval
 
 from six import add_metaclass
 
-from kazoo.client import KazooClient
 from kazoo import exceptions as kazoo_exceptions
+from kazoo.client import KazooClient
 
 
 @add_metaclass(ABCMeta)
@@ -14,59 +13,81 @@ class CacheManager(object):
 
     """Base cache manager class."""
 
+    def __init__(self):
+        self.__variables = {}
+
+    def __getattr__(self, name):
+        """Insert a new attribute variable."""
+        if name not in self.__variables:
+            return self.add_variable(name)
+        return self.__variables[name]
+
     @abstractmethod
     def get_var(self, name):
-        """Method GET for a variable."""
+        """Method GET for a cached variable."""
         pass
 
     @abstractmethod
     def set_var(self, name, value):
-        """Method SET for a variable."""
+        """Method SET for a cached variable."""
         pass
 
     @abstractmethod
     def del_var(self, name):
-        """Method DEL for a variable."""
+        """Method DEL for a cached variable."""
         pass
 
-    def var_2_attr_name(self, string):
-        """Variable string name converter.
-
-        By default it returns the same input string,
-        you have to override the method for a proper
-        conversion.
+    @abstractmethod
+    def pre_add(self, name):
+        """Function called before insertion in __variables.
 
         Params:
-            string (str): the name to convert
-
-        Returns:
-            str
+            name (str): the name of the variable
         """
-        return string
+        pass
+
+    @abstractmethod
+    def post_add(self, name, variable):
+        """Function called after insertion in __variables.
+
+        Params:
+            name (str): the name of the variable
+            variable (Variable): obj variable
+        """
+        pass
 
     def add_variable(self, name):
         """Insert a variable with a specific GET, SET, DEL methods.
 
-        The variable name is converted by 'var_2_attr_name' method.
-        GET, SET and DEL methods are prepared with the name
-        of the variable as partial funcions.
+        This function call pre_add and post_add. It wraps the
+        creation of the variable.
 
         Params:
             name (str): name fo the variable to insert
         """
-        attr_name = self.var_2_attr_name(name)
+        self.pre_add(name)
         new_var = Variable(
-            attr_name,
+            name,
             self.get_var,
             self.set_var,
             self.del_var
         )
-        setattr(self.__class__, attr_name, new_var)
+        self.__variables[name] = new_var
+        self.post_add(name, new_var)
+        return self.__variables[name]
 
 
 class Variable(object):
 
-    """Class representing a variable in cache."""
+    """Class representing a variable in cache.
+
+    This object will have an attribute called 'value'
+    that is linked to the external fget, fset and fdel.
+    These functions are passed during the initialization
+    along with the name of the variable. The name of
+    the variable is binded and is passed as first argument
+    each time a GET, SET, DEL function is called.
+    """
 
     def __init__(self, name, fget, fset, fdel):
         self.__name = name
@@ -109,12 +130,13 @@ class ZookeeperCache(CacheManager):
 
     """Cache manager with Zookeeper."""
 
-    def __init__(self, zookeeper_host_list):
+    def __init__(self, zookeeper_host_list, prefix="/cache/"):
         super(ZookeeperCache, self).__init__()
 
         self.zookeeper_host_list = None
         self.zk_client = None
         self.map = {}
+        self.zookeeper_prefix = prefix
 
         self.init(zookeeper_host_list)
         self.start()
@@ -122,6 +144,20 @@ class ZookeeperCache(CacheManager):
     def __del__(self):
         """Ensure to close the connection."""
         self.stop()
+
+    def string_2_path(self, name):
+        """Return the zookeeper cache path for the given name.
+
+        It uses the zookeeper prefix, take a look at
+        __init__ function.
+
+        Params:
+            name (str): name of the attribute
+
+        Returns:
+            str: the zookeeper path in cache
+        """
+        return self.zookeeper_prefix + name
 
     def get_var(self, name):
         """Returns the variable string.
@@ -166,29 +202,32 @@ class ZookeeperCache(CacheManager):
         """
         return self.zk_client.delete(self.map[name])
 
-    def var_2_attr_name(self, string):
-        """Convert into an attr name and store a zookeeper path.
-
-        The path is stored in self.map and the attr name is
-        returned. In this section is initialized the zookeeper
-        variable.
+    def pre_add(self, name):
+        """Store the variable into the map as Zookeeper node.
 
         Params:
-            string (str): the path string, e.g. "/marathon/refresh_token"
+            name (str): the variable string name
 
         Returns:
-            str: the converted path in a proper attribute string.
-                 Each '/' character it's converted into '_' except
-                 for the first slash char.
+            str: the path of that variable inside Zookeeper
 
         Example:
-            "/marathon/refresh_token" -> "marathon_refresh_token"
+            "my_var" -> "/cache/my_var"
         """
-        tmp = string.strip().split("/")
-        tmp = "_".join([elm for elm in tmp if elm != ""])
-        self.map[tmp] = string
-        self.zk_client.ensure_path(self.map[tmp])
-        return tmp
+        self.map[name] = self.string_2_path(name)
+        return self.map[name]
+
+    def post_add(self, name, variable):
+        """Add the variable as Zookeeper node.
+
+        Params:
+            name (str): the name of the variable
+            variable (Variable): obj variable
+
+        Returns:
+            IAsyncResult
+        """
+        return self.zk_client.ensure_path(self.map[name])
 
     def init(self, zookeeper_host_list):
         """Generate zookeeper host list string."""
