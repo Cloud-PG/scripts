@@ -1,5 +1,5 @@
 FROM centos:7
-MAINTAINER mircot mirco.tracolli@pg.infn.it
+LABEL maintainer="mirco.tracolli@pg.infn.it"
 LABEL Version=0.1
 
 # wn metapackage: https://twiki.cern.ch/twiki/bin/view/LCG/EL7WNMiddleware 
@@ -29,7 +29,7 @@ RUN yum --setopt=tsflags=nodocs -y install python \
     pip install requests && \
     pip install kazoo
 # GET_PROXY SCRIPT
-COPY ./get_proxy ./cache.py /var/www/cgi-bin
+COPY ./get_proxy ./cache.py /var/www/cgi-bin/
 RUN chmod -v +x /var/www/cgi-bin/get_proxy
 # SCRIPT LOG DIR AND FILE
 RUN mkdir -p /var/log/ttscache/ && \
