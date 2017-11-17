@@ -11,7 +11,6 @@
 """
 from __future__ import print_function
 
-import ast
 import json
 import logging
 import os
@@ -24,7 +23,6 @@ import requests
 from urllib3._collections import HTTPHeaderDict
 
 import pycurl
-from kazoo.client import KazooClient
 
 
 class ProxyManager(object):
@@ -42,34 +40,6 @@ class ProxyManager(object):
             'app_name': env.get('MARATHON_APP_ID'),
             'api_url': "https://marathon.service.consul:8443/v2/apps{}"
         }
-        self.zookeeper_host_list = None
-        self.zk_client = None
-
-        ##
-        # kazoo client needs a string with the list of zookeeper hosts
-        # divided by a comma. This little piece of code converts the
-        # list given as environment variable to a proper kazoo host string
-        # and starts the connection only if ZOOKEEPER_HOST_LIST is not None.
-        # In this phase we also prepare the zookeeper nodes to store variables.
-        #
-        # SOURCE: https://kazoo.readthedocs.io/en/latest/api/client.html#kazoo.client.KazooClient
-        #
-        # EXAMPLE:
-        #   host1:port1,host2:port2,host3:port3
-        #
-        # NOTE:
-        #   In zookeeper cms cluser are present these children from root ("/") node:
-        #      ["marathon", "mesos", "zookeeper"]
-        #   So path like "/marathon", "/mesos", "/zookeeper" are already available
-        #
-        if env.get('ZOOKEEPER_HOST_LIST') is not None:
-            host_list = ast.literal_eval(env.get('ZOOKEEPER_HOST_LIST'))
-            self.zookeeper_host_list = ",".join(
-                [host+":2181" for host in host_list]
-            )
-            self.zk_client = KazooClient(hosts=self.zookeeper_host_list)
-            self.zk_client.start()
-            self.zk_client.ensure_path("/marathon/refresh_token")
 
         self.cache_dir = '/tmp/'
         self.token_expiration = 600000
@@ -87,90 +57,6 @@ class ProxyManager(object):
         self.user_passwd = "{}/userpasswd.txt".format(self.cache_dir)
         self.user_proxy = "{}/userproxy.pem".format(self.cache_dir)
         self.exchanged_token = ""
-    
-    def __del__(self):
-        """Ensure to close all connection like zookeeper."""
-        self.zk_client.stop()
-    
-    def zk_set_refresh_token(self, value):
-        """Set the refresh token variable into the zookeeper environment.
-        
-        Params:
-            value (string): the value of the refresh token
-        
-        Returns:
-            kazoo.protocol.states.ZnodeStat
-
-        """
-        return self.zk_client.set("/marathon/refresh_token", value)
-    
-    def zk_get_refresh_token(self):
-        """Returns the refresh token string.
-        
-        Notes:
-            The method get of zk_client returns a byte string that have
-            to be converted into a string with the method decode.
-        """
-        value, z_node_stat = self.zk_client.get("/marathon/refresh_token")
-        return value.decode("utf-8")
-        
-
-    def call_marathon_api(self, method, data):
-        """Interface to marathon REST API.
-
-        This method can call only /v2/apps/{app_id} where
-        app_id is passed by Marathon framework as environment
-        variable.
-
-        Params:
-            method (string): an accepted method for the marathon API
-                             like get, put, delete, patch, head
-            data (dict): data to be serialized in JSON
-
-        Example of use:
-
-            call_marathon_api('patch', {
-                'env': {
-                    'new_variable': 123
-                }
-            })
-
-            This function will call the following URL, because this script run
-            in certcache marathon app:
-                "https://marathon.service.consul:8443/v2/apps/certcache"
-
-            with method patch and the passing data.
-            In data will be inserted automatically the app id
-            and will be converted to JSON string.
-        """
-        try:
-            logging.debug("METHOD: call_marathon_api")
-            with requests.Session() as session:
-                session.auth(self.marathon['user'], self.marathon['passwd'])
-                logging.debug("Using user: '%s' and passwd: '%s'",
-                             self.marathon['user'], self.marathon['passwd'])
-
-                selected_method = getattr(session, method)
-                logging.debug("Selecting method: %s", method)
-
-                full_api_url = self.marathon['api_url'].format(
-                    self.marathon['app_name']
-                )
-                logging.debug("Using URL: %s", full_api_url)
-
-                data['id'] = "/{}".format(self.marathon['app_name'])
-                json_data = json.dumps(data)
-                logging.debug("JSON data: %s", json_data)
-
-                res = selected_method(
-                    full_api_url,
-                    data=json_data,
-                    verify=False  # Required to not verify the SSL certificate
-                )
-                logging.debug("Marathon response: %s", res)
-
-        except requests.exceptions.RequestException as exc:
-            logging.error("Requests exception in call_marathon_api: '%s'", exc)
 
     def check_tts_data(self):
         """Checks and refresh tts data.
@@ -185,7 +71,8 @@ class ProxyManager(object):
         if os.path.exists(self.tts_output_data):
             ctime = os.stat(self.tts_output_data).st_ctime
             since = time.time() - ctime
-            logging.debug("Check expiration time: %s > %s", since, self.token_expiration)
+            logging.debug("Check expiration time: %s > %s",
+                          since, self.token_expiration)
             if since > self.token_expiration:
                 logging.debug("Token about to expire. Get tts data...")
                 tts_data = self.get_tts_data(True)
@@ -207,14 +94,14 @@ class ProxyManager(object):
 
     def get_certificate(self, url):
         """Retrieve the certificate.
-        
+
         Returns:
             The given tts token
 
         Raises:
             - redirect errors
             - curl errors
-        
+
         TO DO:
             - Manage controls (gestisci controlli)
         """
@@ -256,7 +143,7 @@ class ProxyManager(object):
             errno, errstr = error
             logging.error('A pycurl error n. %s occurred: %s', errno, errstr)
             return False
-        
+
         logging.debug("Manage redirect")
         redirect = self.tts
         for item in headers.getvalue().split("\n"):
@@ -272,7 +159,8 @@ class ProxyManager(object):
                     response.raise_for_status()
                 except requests.exceptions.HTTPError as err:
                     # Whoops it wasn't a 200
-                    logging.error("Error in get certificate redirect: %s", str(err))
+                    logging.error(
+                        "Error in get certificate redirect: %s", str(err))
                     return False
 
                 with open('/tmp/output.json', 'w') as outf:
@@ -318,15 +206,6 @@ class ProxyManager(object):
         with open('/tmp/refresh_token', 'w') as outf:
             outf.write(result["refresh_token"])
 
-        ##
-        # TO DO:
-        # - Integrate this call
-        # self.call_marathon_api('patch', {
-        #     'env': {
-        #         'IAM_REFRESH_TOKEN': result["refresh_token"]
-        #     }
-        # })
-
         return result["access_token"]
 
     def introspection(self, iam_client_id, iam_client_secret, exchanged_token):
@@ -359,11 +238,10 @@ class ProxyManager(object):
 
     def refresh_token(self, refresh_token):
         """Request with refresh token.
-        
+
         TO DO:
             - Manage result out of the function (gestisci result fuori dalla funzione)
         """
-, 
         data = HTTPHeaderDict()
         data.add('client_id', self.client_id)
         data.add('client_secret', self.client_secret)
@@ -382,7 +260,7 @@ class ProxyManager(object):
             logging.error("HTTP error. Response status: %s",
                           response.status_code)
             return response.status_code
-        
+
         logging.debug("Response content: %s", response.content)
         result = json.loads(response.content)
         return result["access_token"]
@@ -402,12 +280,14 @@ class ProxyManager(object):
         if os.path.exists(self.lock_file):
             ctime = os.stat(self.lock_file).st_ctime
             age = time.time() - ctime
-            logging.debug("Check age of %s: %s < %s", self.lock_file, age, self.age)
+            logging.debug("Check age of %s: %s < %s",
+                          self.lock_file, age, self.age)
             if age < self.age:
                 logging.debug("Update in progres. Go to sleep...")
                 time.sleep(self.age - age)
             else:
-                logging.debug("Stale lock file. Removing %s...", self.lock_file)
+                logging.debug("Stale lock file. Removing %s...",
+                              self.lock_file)
                 os.remove(self.lock_file)
         logging.debug("Update last use time of %s", self.lock_file)
         open(self.lock_file, 'w+').close()
@@ -417,13 +297,14 @@ class ProxyManager(object):
             with file('/tmp/refresh_token') as refresh_t_file:
                 refresh_token = refresh_t_file.read()
                 logging.debug("Refresh token")
-                self.exchanged_token = self.refresh_token(refresh_token.strip())
+                self.exchanged_token = self.refresh_token(
+                    refresh_token.strip())
                 if isinstance(self.exchanged_token, int):
                     logging.error("Error in refresh_token")
-        
+
         logging.debug("Refresh token")
         if self.get_certificate(self.credential_endpoint):
-            
+
             logging.debug("Load json and prepare objects")
             with open('/tmp/output.json') as tts_data_file:
                 tts_data = json.load(tts_data_file)
@@ -447,7 +328,7 @@ class ProxyManager(object):
                 logging.error(
                     "Permission denied to chmod passwd file: %s", err)
                 return False
-            
+
             logging.debug("Remove lock")
             os.remove(self.lock_file)
 
@@ -492,7 +373,7 @@ class ProxyManager(object):
 if __name__ == '__main__':
 
     logging.basicConfig(filename='/var/log/ttscache/certcache.log',
-                        format='%(asctime)s: [%(levelname)s] %(message)s', level=logging.DEBUG)
+                        format='[%(filename)s@%(lineno)d][%(asctime)s](%(levelname)s)->(%(message)s)', level=logging.DEBUG)
 
     logging.info("CALLING GET PROXY")
 

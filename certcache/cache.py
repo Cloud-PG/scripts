@@ -1,7 +1,11 @@
 """Module for caching variables in different stores."""
+import json
+import logging
 from abc import ABCMeta, abstractmethod
 from ast import literal_eval
+from os import environ
 
+import requests
 from six import add_metaclass
 
 from kazoo import exceptions as kazoo_exceptions
@@ -135,7 +139,7 @@ class ZookeeperCache(CacheManager):
 
         self.zookeeper_host_list = None
         self.zk_client = None
-        self.map = {}
+        self.map_ = {}
         self.zookeeper_prefix = prefix
 
         self.init(zookeeper_host_list)
@@ -157,7 +161,9 @@ class ZookeeperCache(CacheManager):
         Returns:
             str: the zookeeper path in cache
         """
-        return self.zookeeper_prefix + name
+        path_ = self.zookeeper_prefix + name
+        logging.debug("Zookeeper PATH: %s", path_)
+        return path_
 
     def get_var(self, name):
         """Returns the variable string.
@@ -173,13 +179,16 @@ class ZookeeperCache(CacheManager):
             to be converted into a string with the method decode.
         """
         try:
-            value, _ = self.zk_client.get(self.map[name])
+            logging.debug("Zookeeper GET variable %s", name)
+            value, _ = self.zk_client.get(self.map_[name])
         except kazoo_exceptions.NoNodeError:
             return "ERROR: Node NOT EXISTS or was DELETED!"
         return value.decode("utf-8")
 
     def set_var(self, name, value):
         """Set the variable into the zookeeper environment.
+
+        Value is forced to be a string because of Zookeeper.
 
         Params:
             name (str): name of the variable
@@ -189,7 +198,8 @@ class ZookeeperCache(CacheManager):
             kazoo.protocol.states.ZnodeStat
 
         """
-        return self.zk_client.set(self.map[name], str(value))
+        logging.debug("Zookeeper SET variable %s to %s", name, value)
+        return self.zk_client.set(self.map_[name], str(value))
 
     def del_var(self, name):
         """Returns the variable string.
@@ -200,7 +210,8 @@ class ZookeeperCache(CacheManager):
         Returns:
             tuple(value, ZnodeStat)
         """
-        return self.zk_client.delete(self.map[name])
+        logging.debug("Zookeeper DEL variable %s", name)
+        return self.zk_client.delete(self.map_[name])
 
     def pre_add(self, name):
         """Store the variable into the map as Zookeeper node.
@@ -214,8 +225,9 @@ class ZookeeperCache(CacheManager):
         Example:
             "my_var" -> "/cache/my_var"
         """
-        self.map[name] = self.string_2_path(name)
-        return self.map[name]
+        self.map_[name] = self.string_2_path(name)
+        logging.debug("Prepared map for %s", name)
+        return self.map_[name]
 
     def post_add(self, name, variable):
         """Add the variable as Zookeeper node.
@@ -227,11 +239,12 @@ class ZookeeperCache(CacheManager):
         Returns:
             IAsyncResult
         """
-        return self.zk_client.ensure_path(self.map[name])
+        logging.debug("Create Zookeeper node for %s", name)
+        return self.zk_client.ensure_path(self.map_[name])
 
     def init(self, zookeeper_host_list):
         """Parse and save zookeeper host list string.
-        
+
         This function tries also to add the default port
         when is not present in the host address.
 
@@ -241,14 +254,16 @@ class ZookeeperCache(CacheManager):
 
         Params:
             zookeeper_host_list (str): zookeeper host addresses
-        
+
         Returns:
             self
         """
         host_list = literal_eval(zookeeper_host_list)
         self.zookeeper_host_list = ",".join(
-            [host + ":2181" if host.find(":") == -1 else host for host in host_list]
+            [host + ":2181" if host.find(":") == -
+             1 else host for host in host_list]
         )
+        logging.debug("Zookeeper host string: %s", self.zookeeper_host_list)
         return self  # Enable Chaining
 
     def start(self):
@@ -264,7 +279,7 @@ class ZookeeperCache(CacheManager):
 
         EXAMPLE:
           host1:port1,host2:port2,host3:port3
-        
+
         Returns:
             self
 
@@ -276,13 +291,147 @@ class ZookeeperCache(CacheManager):
         """
         self.zk_client = KazooClient(hosts=self.zookeeper_host_list)
         self.zk_client.start()
+        logging.debug("Zookeeper session started!")
         return self  # Enable Chaining
 
     def stop(self):
         """Close zookeeper connection.
-        
+
         Returns:
             self
         """
         self.zk_client.stop()
+        logging.debug("Zookeeper session stopped!")
         return self  # Enable Chaining
+
+
+class MarathonCache(CacheManager):
+
+    """Cache manager with Marathon environment variables.
+
+    Cache is stored as a JSON string in the environment variable
+    named CACHE. This object update the Marathon app environment (PATCH)
+    only when a variable is setted (set_var) or deleted (del_var)
+    because in those two cases the Marathon app will be restarted
+    and we don't want a restart when we just use the GET method
+    without updating the environment; for this reason the
+    creation of the variable is lazy, not like in ZookeeperCache
+    where when you create the variable is immediatly created in the
+    cache node of Zookeeper.
+    """
+
+    def __init__(self, user, passwd, app_id=None, port=8443):
+        super(MarathonCache, self).__init__()
+
+        if app_id is not None and app_id[0] != "/":
+            app_id = "/" + app_id
+        self.__app_name = environ.get(
+            'MARATHON_APP_ID') if app_id is None else app_id,
+        self.__api_url = "https://marathon.service.consul:{}/v2/apps{}"
+        self.__port = port
+        self.__cache = None
+        self.__session = requests.Session()
+        self.__session.auth = (user, passwd)
+
+    def __del__(self):
+        """Ensure to close the session."""
+        self.__session.close()
+        logging.debug("Session closed!")
+
+    @property
+    def app_url(self):
+        """Return the zookeeper cache path for the given name.
+
+        It uses the zookeeper prefix, take a look at
+        __init__ function.
+
+        Params:
+            name (str): name of the attribute
+
+        Returns:
+            str: the zookeeper path in cache
+        """
+        url_ = self.__api_url.format(self.__port, self.__app_name)
+        logging.debug("URL generated: %s", url_)
+        return url_
+
+    def get_var(self, name):
+        """Returns the variable value.
+
+        Params:
+            name (str): name of the variable
+
+        Returns:
+            variable: the value of the variable
+        """
+        logging.debug("Marathon GET variable %s", name)
+        return self.__cache[name]
+
+    def set_var(self, name, value):
+        """Set the variable into the zookeeper environment.
+
+        Params:
+            name (str): name of the variable
+            value (str): the value to set
+
+        Returns:
+            Response object
+        """
+        logging.debug("Marathon SET variable %s to %s", name, value)
+        self.__cache[name] = value
+        try:
+            res = self.__session.patch(
+                self.app_url,
+                data=self.json_cache_data(),
+                verify=False
+            )
+        except requests.exceptions.RequestException as exc:
+            logging.error("Requests exception SET method: '%s'", exc)
+        
+        return res
+
+    def del_var(self, name):
+        """Returns the variable string.
+
+        Params:
+            name (str): name of the variable
+
+        Returns:
+            Response object
+        """
+        logging.debug("Marathon DEL variable %s", name)
+        del self.__cache[name]
+        try:
+            res = self.__session.patch(
+                self.app_url,
+                data=self.json_cache_data(),
+                verify=False
+            )
+        except requests.exceptions.RequestException as exc:
+            logging.error("Requests exception DEL method: '%s'", exc)
+        return res
+
+    def pre_add(self, name):
+        """Update the cache from environment variables."""
+        logging.debug("PRE ADD")
+        res = self.__session.get(self.app_url, verify=False).json()
+        logging.debug("Marathon response: %s", res)
+        env = res.get("env", {})
+        self.__cache = env.get("CACHE", {})
+        logging.debug("Current CACHE: %s", self.__cache)
+
+    def post_add(self, name, variable):
+        """Nothing to do in post add with Marathon."""
+        pass
+
+    def json_cache_data(self):
+        """Generate the cache JSON string."""
+        data = {
+            'id': self.__app_name,
+            'env': {
+                'CACHE': self.__cache
+            }
+        }
+        json_data = json.dumps(data)
+        logging.debug("JSON data: %s", json_data)
+        return json_data
