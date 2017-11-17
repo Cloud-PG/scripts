@@ -230,10 +230,24 @@ class ZookeeperCache(CacheManager):
         return self.zk_client.ensure_path(self.map[name])
 
     def init(self, zookeeper_host_list):
-        """Generate zookeeper host list string."""
+        """Parse and save zookeeper host list string.
+        
+        This function tries also to add the default port
+        when is not present in the host address.
+
+        The list is normally retreived from the envirnment
+        variables where is stored as a string like:
+            - ZOOKEEPER_HOST_LIST="['10.1.4.2']"
+
+        Params:
+            zookeeper_host_list (str): zookeeper host addresses
+        
+        Returns:
+            self
+        """
         host_list = literal_eval(zookeeper_host_list)
         self.zookeeper_host_list = ",".join(
-            [host + ":2181" for host in host_list]
+            [host + ":2181" if host.find(":") == -1 else host for host in host_list]
         )
         return self  # Enable Chaining
 
@@ -250,6 +264,9 @@ class ZookeeperCache(CacheManager):
 
         EXAMPLE:
           host1:port1,host2:port2,host3:port3
+        
+        Returns:
+            self
 
         NOTE:
           In zookeeper cms cluser are present these children from root ("/") node:
@@ -262,6 +279,10 @@ class ZookeeperCache(CacheManager):
         return self  # Enable Chaining
 
     def stop(self):
-        """Close zookeeper connection."""
+        """Close zookeeper connection.
+        
+        Returns:
+            self
+        """
         self.zk_client.stop()
         return self  # Enable Chaining
