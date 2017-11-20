@@ -326,7 +326,7 @@ class MarathonCache(CacheManager):
         if app_id is not None and app_id[0] != "/":
             app_id = "/" + app_id
         self.__app_name = environ.get(
-            'MARATHON_APP_ID') if app_id is None else app_id,
+            'MARATHON_APP_ID') if app_id is None else app_id
         self.__api_url = "https://marathon.service.consul:{}/v2/apps{}"
         self.__port = port
         self.__cache = None
