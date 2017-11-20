@@ -11,6 +11,8 @@ from six import add_metaclass
 from kazoo import exceptions as kazoo_exceptions
 from kazoo.client import KazooClient
 
+__all__ = ['ZookeeperCache', 'MarathonCache']
+
 
 @add_metaclass(ABCMeta)
 class CacheManager(object):
