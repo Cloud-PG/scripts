@@ -23,25 +23,30 @@ import requests
 from urllib3._collections import HTTPHeaderDict
 
 import pycurl
+from cache import *
 
 
 class ProxyManager(object):
 
     """Manager of tokens."""
 
-    def __init__(self, env):
+    def __init__(self, env, cache_manager="ZOOKEEPER"):
         # Get all environment variables
         self.iam_token = env.get('IAM_TOKEN')
         self.client_id = env.get('IAM_CLIENT_ID')
         self.client_secret = env.get('IAM_CLIENT_SECRET')
         self.marathon = {
             'user': env.get('MARATHON_USER'),
-            'passwd': env.get('MARATHON_PASSWD'),
-            'app_name': env.get('MARATHON_APP_ID'),
-            'api_url': "https://marathon.service.consul:8443/v2/apps{}"
+            'passwd': env.get('MARATHON_PASSWD')
         }
-
+        # CACHE
         self.cache_dir = '/tmp/'
+        if cache_manager == 'ZOOKEEPER':
+            self.cache = ZookeeperCache(env.get('ZOOKEEPER_HOST_LIST'))
+        elif cache_manager == 'MARATHON':
+            self.cache = MarathonCache(
+                self.marathon['user'], self.marathon['passwd'])
+        ##
         self.token_expiration = 600000
         self.age = 20
         self.audience = 'https://watts.data.kit.edu'
@@ -85,7 +90,12 @@ class ProxyManager(object):
             if isinstance(self.exchanged_token, int):
                 logging.error("Get exchange token error: %s",
                               self.exchanged_token)
-                return False
+                if self.cache.refresh_token.value == '':
+                    logging.error("Problem with Token Server")
+                    return False
+                else:
+                    logging.error("Exchange with refresh token")
+                    tts_data = self.get_tts_data(True)
             else:
                 logging.debug("Token OK.")
                 tts_data = self.get_tts_data(self.exchanged_token)
@@ -205,6 +215,7 @@ class ProxyManager(object):
         logging.debug("Override refresh token")
         with open('/tmp/refresh_token', 'w') as outf:
             outf.write(result["refresh_token"])
+            self.cache.refresh_token.value = result["refresh_token"]
 
         return result["access_token"]
 
@@ -294,13 +305,19 @@ class ProxyManager(object):
 
         if exchange:
             logging.debug("Exchange /tmp/refresh_token")
-            with file('/tmp/refresh_token') as refresh_t_file:
-                refresh_token = refresh_t_file.read()
-                logging.debug("Refresh token")
+            if self.cache.refresh_token.value == "":
+                with file('/tmp/refresh_token') as refresh_t_file:
+                    refresh_token = refresh_t_file.read()
+                    logging.debug("Refresh token")
+                    self.exchanged_token = self.refresh_token(
+                        refresh_token.strip())
+                    if isinstance(self.exchanged_token, int):
+                        logging.error("Error in refresh_token")
+            else:
                 self.exchanged_token = self.refresh_token(
-                    refresh_token.strip())
+                    self.cache.refresh_token.value)
                 if isinstance(self.exchanged_token, int):
-                    logging.error("Error in refresh_token")
+                    logging.error("Error in refresh_token with Zookeeper")
 
         logging.debug("Refresh token")
         if self.get_certificate(self.credential_endpoint):
