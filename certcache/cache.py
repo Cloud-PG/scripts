@@ -431,7 +431,7 @@ class MarathonCache(CacheManager):
                         json.dumps(self.__cache)
                     )
                 )
-                for key, value in self.__env
+                for key, value in self.__env.items()
             )
         }
         json_data = json.dumps(data)
