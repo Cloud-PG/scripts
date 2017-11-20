@@ -5,4 +5,5 @@
 # if it thinks it is already running.
 rm -rf /run/httpd/* /tmp/httpd*
 
-exec /usr/sbin/apachectl -DFOREGROUND
+exec /usr/bin/python /var/www/cgi-bin/get_proxy \
+     && /usr/sbin/apachectl -DFOREGROUND
