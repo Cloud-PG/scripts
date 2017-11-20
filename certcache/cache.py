@@ -359,10 +359,12 @@ class MarathonCache(CacheManager):
             variable: the value of the variable
         """
         logging.debug("Marathon GET variable %s", name)
-        return self.__cache[name]
+        return self.__cache.get(name, "")
 
     def set_var(self, name, value):
         """Set the variable into the zookeeper environment.
+
+        NOTE: value is converted to str anyway
 
         Params:
             name (str): name of the variable
@@ -372,7 +374,7 @@ class MarathonCache(CacheManager):
             Response object
         """
         logging.debug("Marathon SET variable %s to %s", name, value)
-        self.__cache[name] = value
+        self.__cache[name] = str(value)
         try:
             res = self.__session.patch(
                 self.app_url,
