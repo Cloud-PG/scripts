@@ -411,7 +411,7 @@ class MarathonCache(CacheManager):
         logging.debug("PRE ADD")
         res = self.__session.get(self.app_url, verify=False).json()
         logging.debug("Marathon response: %s", res)
-        self.__env = res.get("env", {})
+        self.__env = res.get("app").get("env", {})
         if 'CACHE' not in self.__env:
             self.__env['CACHE'] = "{}"
         self.__cache = json.loads(self.__env['CACHE'])
