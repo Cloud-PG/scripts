@@ -425,7 +425,7 @@ class MarathonCache(CacheManager):
         data = {
             'id': self.__app_name,
             'env': {
-                'CACHE': self.__cache
+                'CACHE': '{}'.format(json.dumps(self.__cache))
             }
         }
         json_data = json.dumps(data)
