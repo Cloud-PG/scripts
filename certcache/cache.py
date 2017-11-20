@@ -340,16 +340,10 @@ class MarathonCache(CacheManager):
 
     @property
     def app_url(self):
-        """Return the zookeeper cache path for the given name.
-
-        It uses the zookeeper prefix, take a look at
-        __init__ function.
-
-        Params:
-            name (str): name of the attribute
+        """Return the base API URL for Marathon.
 
         Returns:
-            str: the zookeeper path in cache
+            str: APP URL in marathon
         """
         url_ = self.__api_url.format(self.__port, self.__app_name)
         logging.debug("URL generated: %s", url_)
