@@ -330,6 +330,7 @@ class MarathonCache(CacheManager):
         self.__api_url = "https://marathon.service.consul:{}/v2/apps{}"
         self.__port = port
         self.__cache = None
+        self.__env = None
         self.__session = requests.Session()
         self.__session.auth = (user, passwd)
 
@@ -364,8 +365,6 @@ class MarathonCache(CacheManager):
     def set_var(self, name, value):
         """Set the variable into the zookeeper environment.
 
-        NOTE: value is converted to str anyway
-
         Params:
             name (str): name of the variable
             value (str): the value to set
@@ -374,7 +373,7 @@ class MarathonCache(CacheManager):
             Response object
         """
         logging.debug("Marathon SET variable %s to %s", name, value)
-        self.__cache[name] = str(value)
+        self.__cache[name] = value
         try:
             res = self.__session.patch(
                 self.app_url,
@@ -383,7 +382,7 @@ class MarathonCache(CacheManager):
             )
         except requests.exceptions.RequestException as exc:
             logging.error("Requests exception SET method: '%s'", exc)
-        
+
         return res
 
     def del_var(self, name):
@@ -412,8 +411,10 @@ class MarathonCache(CacheManager):
         logging.debug("PRE ADD")
         res = self.__session.get(self.app_url, verify=False).json()
         logging.debug("Marathon response: %s", res)
-        env = res.get("env", {})
-        self.__cache = env.get("CACHE", {})
+        self.__env = res.get("env", {})
+        if 'CACHE' not in self.__env:
+            self.__env['CACHE'] = "{}"
+        self.__cache = json.loads(self.__env['CACHE'])
         logging.debug("Current CACHE: %s", self.__cache)
 
     def post_add(self, name, variable):
@@ -424,9 +425,14 @@ class MarathonCache(CacheManager):
         """Generate the cache JSON string."""
         data = {
             'id': self.__app_name,
-            'env': {
-                'CACHE': '{}'.format(json.dumps(self.__cache))
-            }
+            'env': dict(
+                (key, value) if key != 'CACHE' else (
+                    key, '{}'.format(
+                        json.dumps(self.__cache)
+                    )
+                )
+                for key, value in self.__env
+            )
         }
         json_data = json.dumps(data)
         logging.debug("JSON data: %s", json_data)
