@@ -390,7 +390,7 @@ class ProxyManager(object):
 if __name__ == '__main__':
 
     logging.basicConfig(filename='/var/log/ttscache/certcache.log',
-                        format='[%(filename)s@%(lineno)d][%(asctime)s](%(levelname)s)->(%(message)s)', level=logging.DEBUG)
+                        format='[%(asctime)s][%(levelname)s][%(filename)s@%(lineno)d]->[%(message)s]', level=logging.DEBUG)
 
     logging.info("CALLING GET PROXY")
 
