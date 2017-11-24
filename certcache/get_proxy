@@ -53,12 +53,12 @@ class ProxyManager(object):
         ##
         self.token_expiration = 600000
         self.age = 20
-        self.audience = 'https://watts.data.kit.edu'
-        self.tts = 'https://watts.data.kit.edu'
+        self.audience = 'https://watts-dev.data.kit.edu'
+        self.tts = 'https://watts-dev.data.kit.edu'
         self.iam_endpoint = 'https://iam-test.indigo-datacloud.eu/'
         self.token_endpoint = self.iam_endpoint + 'token'
         self.introspect_endpoint = self.iam_endpoint + 'introspect'
-        self.credential_endpoint = 'https://watts.data.kit.edu/api/v2/iam/credential'
+        self.credential_endpoint = 'https://watts-dev.data.kit.edu/api/v2/iam/credential'
         self.tts_output_data = '{}/output.json'.format(self.cache_dir)
         self.lock_file = "{}/lock".format(self.cache_dir)
         self.user_cert = "{}/usercert.crt".format(self.cache_dir)
@@ -159,14 +159,13 @@ class ProxyManager(object):
             return False
 
         logging.debug("Manage redirect")
-        redirect = self.tts
         for item in headers.getvalue().split("\n"):
             if "location" in item:
                 # Example item
                 #   "location: https://watts-dev.data.kit.edu/api/v2/iam/credential_data/xxx"
                 logging.debug("Item url: %s", item)
                 url_path = urlsplit(item.strip().split()[1]).path
-                redirect = redirect + url_path
+                redirect = self.tts + url_path
                 logging.debug("Redirect location: %s", redirect)
 
                 headers = {'Authorization': 'Bearer ' +
