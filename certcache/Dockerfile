@@ -15,7 +15,7 @@ RUN wget http://repository.egi.eu/community/software/preview.repository/2.0/rele
 WORKDIR /root
 # ADD EXTRA SYSTEM STUFF
 RUN yum --setopt=tsflags=nodocs -y install epel-release yum-plugin-ovl \
-    && yum --setopt=tsflags=nodocs -y install fetch-crl singularity wn \
+    && yum --setopt=tsflags=nodocs -y install fetch-crl wn \
     && yum clean all
 
 # APACHE + CGI + SCRIPT DEPENDENCIES
