@@ -18,6 +18,10 @@ import subprocess
 import sys
 import time
 from StringIO import StringIO
+if sys.version_info.major == 2:
+    from urlparse import urlsplit
+else:
+    from urllib.parse import urlsplit
 
 import requests
 from urllib3._collections import HTTPHeaderDict
@@ -40,7 +44,7 @@ class ProxyManager(object):
             'passwd': env.get('MARATHON_PASSWD')
         }
         # CACHE
-        self.cache_dir = '/tmp/'
+        self.cache_dir = '/tmp'
         if cache_manager == 'ZOOKEEPER':
             self.cache = ZookeeperCache(env.get('ZOOKEEPER_HOST_LIST'))
         elif cache_manager == 'MARATHON':
@@ -158,8 +162,12 @@ class ProxyManager(object):
         redirect = self.tts
         for item in headers.getvalue().split("\n"):
             if "location" in item:
-                logging.debug("Redirect location %s", item)
-                redirect = redirect + item.strip().replace("location: ", "")
+                # Example item
+                #   "location: https://watts-dev.data.kit.edu/api/v2/iam/credential_data/xxx"
+                logging.debug("Item url: %s", item)
+                url_path = urlsplit(item.strip().split()[1]).path
+                redirect = redirect + url_path
+                logging.debug("Redirect location: %s", redirect)
 
                 headers = {'Authorization': 'Bearer ' +
                            self.exchanged_token.strip()}
@@ -397,18 +405,18 @@ if __name__ == '__main__':
     # imports tokens, id and secret
     ENV = {
         'IAM_TOKEN': os.environ.get("IAM_TOKEN", None),
-        'REFRESH_TOKEN': os.environ.get("IAM_REFRESH_TOKEN", None),
-        'CLIENT_ID': os.environ.get("IAM_CLIENT_ID", None),
-        'CLIENT_SECRET': os.environ.get("IAM_CLIENT_SECRET", None),
+        'IAM_REFRESH_TOKEN': os.environ.get("IAM_REFRESH_TOKEN", None),
+        'IAM_CLIENT_ID': os.environ.get("IAM_CLIENT_ID", None),
+        'IAM_CLIENT_SECRET': os.environ.get("IAM_CLIENT_SECRET", None),
         'MARATHON_USER': os.environ.get("MARATHON_USER", None),
         'MARATHON_PASSWD': os.environ.get("MARATHON_PASSWD", None),
         'ZOOKEEPER_HOST_LIST': os.environ.get("ZOOKEEPER_HOST_LIST", None),
     }
 
     logging.info("IAM_TOKEN = %s", ENV.get('IAM_TOKEN'))
-    logging.info("IAM_REFRESH_TOKEN = %s", ENV.get('REFRESH_TOKEN'))
-    logging.info("IAM_CLIENT_= %s", ENV.get('CLIENT_ID'))
-    logging.info("IAM_CLIENT_SECRET = %s", ENV.get('CLIENT_SECRET'))
+    logging.info("IAM_REFRESH_TOKEN = %s", ENV.get('IAM_REFRESH_TOKEN'))
+    logging.info("IAM_CLIENT_= %s", ENV.get('IAM_CLIENT_ID'))
+    logging.info("IAM_CLIENT_SECRET = %s", ENV.get('IAM_CLIENT_SECRET'))
     logging.info("MARATHON_USER = %s", ENV.get('MARATHON_USER'))
     logging.info("MARATHON_PASSWD = %s", ENV.get('MARATHON_PASSWD'))
     logging.info("ZOOKEEPER_HOST_LIST = %s", ENV.get('ZOOKEEPER_HOST_LIST'))
