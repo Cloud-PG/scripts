@@ -326,6 +326,9 @@ class ProxyManager(object):
                     self.cache.refresh_token.value)
                 if isinstance(self.exchanged_token, int):
                     logging.error("Error in refresh_token with Zookeeper")
+                else:
+                    with open('/tmp/refresh_token', 'w') as outf:
+                        outf.write(self.cache.refresh_token.value)
 
         logging.debug("Refresh token")
         if self.get_certificate(self.credential_endpoint):
