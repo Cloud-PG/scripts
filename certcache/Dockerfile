@@ -21,8 +21,7 @@ RUN yum --setopt=tsflags=nodocs -y install epel-release yum-plugin-ovl \
 # APACHE + CGI + SCRIPT DEPENDENCIES
 RUN yum --setopt=tsflags=nodocs -y install python python-pip httpd \
     && pip install --upgrade pip \
-    && pip install requests \
-    && pip install kazoo
+    && pip install requests kazoo
 
 # GET_PROXY SCRIPT
 COPY ./get_proxy ./cache.py /var/www/cgi-bin/
