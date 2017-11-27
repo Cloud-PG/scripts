@@ -230,7 +230,7 @@ class ZookeeperCache(CacheManager):
             value = json.loads(container).get('val')
         except kazoo_exceptions.NoNodeError:
             return "ERROR: Node NOT EXISTS or was DELETED!"
-        return value.decode("utf-8")
+        return value
 
     def set_var(self, name, value):
         """Set the variable into the zookeeper environment.
