@@ -18,10 +18,6 @@ import subprocess
 import sys
 import time
 from StringIO import StringIO
-if sys.version_info.major == 2:
-    from urlparse import urlsplit
-else:
-    from urllib.parse import urlsplit
 
 import requests
 from urllib3._collections import HTTPHeaderDict
@@ -29,12 +25,17 @@ from urllib3._collections import HTTPHeaderDict
 import pycurl
 from cache import *
 
+if sys.version_info.major == 2:
+    from urlparse import urlsplit
+else:
+    from urllib.parse import urlsplit
+
 
 class ProxyManager(object):
 
     """Manager of tokens."""
 
-    def __init__(self, env, cache_manager="ZOOKEEPER"):
+    def __init__(self, env, cache_manager=None):
         # Get all environment variables
         self.iam_token = env.get('IAM_TOKEN')
         self.client_id = env.get('IAM_CLIENT_ID')
@@ -50,6 +51,8 @@ class ProxyManager(object):
         elif cache_manager == 'MARATHON':
             self.cache = MarathonCache(
                 self.marathon['user'], self.marathon['passwd'])
+        else:
+            self.cache = MemoryCache()
         ##
         self.token_expiration = 600000
         self.age = 20
@@ -397,11 +400,8 @@ class ProxyManager(object):
             logging.error("Error occured in check_tts_data!")
 
 
-if __name__ == '__main__':
-
-    logging.basicConfig(filename='/var/log/ttscache/certcache.log',
-                        format='[%(asctime)s][%(levelname)s][%(filename)s@%(lineno)d]->[%(message)s]', level=logging.DEBUG)
-
+def get():
+    """Execute the get_proxy routine."""
     logging.info("CALLING GET PROXY")
 
     # imports tokens, id and secret
@@ -413,6 +413,7 @@ if __name__ == '__main__':
         'MARATHON_USER': os.environ.get("MARATHON_USER", None),
         'MARATHON_PASSWD': os.environ.get("MARATHON_PASSWD", None),
         'ZOOKEEPER_HOST_LIST': os.environ.get("ZOOKEEPER_HOST_LIST", None),
+        'CACHE_MANAGER': os.environ.get("CACHE_MANAGER", False)
     }
 
     logging.info("IAM_TOKEN = %s", ENV.get('IAM_TOKEN'))
@@ -422,20 +423,32 @@ if __name__ == '__main__':
     logging.info("MARATHON_USER = %s", ENV.get('MARATHON_USER'))
     logging.info("MARATHON_PASSWD = %s", ENV.get('MARATHON_PASSWD'))
     logging.info("ZOOKEEPER_HOST_LIST = %s", ENV.get('ZOOKEEPER_HOST_LIST'))
+    logging.info("CACHE_MANAGER = %s", ENV.get('CACHE_MANAGER'))
 
-    PROXY_MANAGER = ProxyManager(ENV)
+    cache_manager = None
 
-    print("Content-type: application/octet-stream\n\n")
-    print("Content-Disposition: attachment; filename=.pem")
-    print()
-    PROXY_FILE = PROXY_MANAGER.generate_proxy()
+    if ENV.get('CACHE_MANAGER') == 'ZOOKEEPER' and ENV.get('ZOOKEEPER_HOST_LIST') is not None:
+        cache_manager = 'ZOOKEEPER'
+    elif ENV.get('CACHE_MANAGER') == 'MARATHON' and ENV.get('MARATHON_USER') is not None and ENV.get('MARATHON_PASSWD') is not None:
+        cache_manager = 'MARATHON'
+    elif ENV.get('CACHE_MANAGER'):
+        # CACHE MANAGER is set and is not recognized
+        raise Exception("Unknown CACHE MANAGER")
 
-    if PROXY_FILE is not None:
-        with open(PROXY_FILE, 'rb') as proxy_file:
-            print(proxy_file.read())
+    proxy_manager = ProxyManager(ENV, cache_manager)
+    proxy_file = proxy_manager.generate_proxy()
+
+    if proxy_file is not None:
+        header = {
+            'Content-Type': "application/octet-stream",
+            'filename': ".pem"
+        }
+        with open(proxy_file, 'rb') as file_:
+            data = file_.read()
+        return header, data
     else:
-        logging.error("Cannot find Proxy file: '%s'", PROXY_FILE)
-        print("Content-type: text/html")
-        print()
-        print("<p>grid-proxy-info failed</p>")
-    sys.exit()
+        logging.error("Cannot find Proxy file: '%s'", proxy_file)
+        header = {
+            'Content-Type': "text/html"
+        }
+        return header, "<p>grid-proxy-info failed</p>"

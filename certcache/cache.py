@@ -11,7 +11,7 @@ from six import add_metaclass
 from kazoo import exceptions as kazoo_exceptions
 from kazoo.client import KazooClient
 
-__all__ = ['ZookeeperCache', 'MarathonCache']
+__all__ = ['MemoryCache', 'ZookeeperCache', 'MarathonCache']
 
 
 @add_metaclass(ABCMeta)
@@ -131,6 +131,49 @@ class Variable(object):
 
     value = property(m_get, m_set, m_del)
 
+
+class MemoryCache(object):
+
+    """Base cache manager class."""
+
+    def __init__(self):
+        super(MemoryCache, self).__init__()
+        self.__mem = {}
+    
+    def get_var(self, name):
+        """Method GET for a cached variable."""
+        logging.debug("Memory GET variable %s", name)
+        return self.__mem.get(name, "")
+
+    def set_var(self, name, value):
+        """Method SET for a cached variable."""
+        logging.debug("Memory SET variable %s to %s", name, value)
+        self.__mem[name] = value
+        return self.__mem[name]
+
+    def del_var(self, name):
+        """Method DEL for a cached variable."""
+        logging.debug("Memory DEL variable %s", name)
+        tmp = self.__mem[name]
+        del self.__mem[name]
+        return tmp
+
+    def pre_add(self, name):
+        """Function called before insertion in __variables.
+
+        Params:
+            name (str): the name of the variable
+        """
+        pass
+
+    def post_add(self, name, variable):
+        """Function called after insertion in __variables.
+
+        Params:
+            name (str): the name of the variable
+            variable (Variable): obj variable
+        """
+        pass
 
 class ZookeeperCache(CacheManager):
 
