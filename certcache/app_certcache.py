@@ -33,5 +33,6 @@ if __name__ == '__main__':
     logging.basicConfig(filename='/var/log/certcache/app.log',
                         format='[%(asctime)s][%(levelname)s][%(filename)s@%(lineno)d]->[%(message)s]',
                         level=logging.DEBUG)
+    APP.logger.setLevel(logging.DEBUG)
     get_proxy()
     APP.run(host="0.0.0.0", port=80)
