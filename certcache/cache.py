@@ -143,7 +143,7 @@ class MemoryCache(CacheManager):
     def get_var(self, name):
         """Method GET for a cached variable."""
         logging.debug("Memory GET variable %s", name)
-        return self.__mem.get(name")
+        return self.__mem.get(name)
 
     def set_var(self, name, value):
         """Method SET for a cached variable."""
