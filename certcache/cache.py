@@ -164,7 +164,8 @@ class MemoryCache(object):
         Params:
             name (str): the name of the variable
         """
-        pass
+        if name not in self.__mem:
+            self.__mem[name] = ""
 
     def post_add(self, name, variable):
         """Function called after insertion in __variables.
@@ -217,7 +218,7 @@ class ZookeeperCache(CacheManager):
             name (str): name of the variable
 
         Returns:
-            str: the value of the variable converted in string
+            value: the value of the variable
 
         Notes:
             The method get of zk_client returns a byte string that have
@@ -225,7 +226,8 @@ class ZookeeperCache(CacheManager):
         """
         try:
             logging.debug("Zookeeper GET variable %s", name)
-            value, _ = self.zk_client.get(self.map_[name])
+            container, _ = self.zk_client.get(self.map_[name])
+            value = json.loads(container).get('val')
         except kazoo_exceptions.NoNodeError:
             return "ERROR: Node NOT EXISTS or was DELETED!"
         return value.decode("utf-8")
@@ -233,7 +235,8 @@ class ZookeeperCache(CacheManager):
     def set_var(self, name, value):
         """Set the variable into the zookeeper environment.
 
-        Value is forced to be a string because of Zookeeper.
+        Value is forced to be a JSON string to store the basic
+        Python types in Zookeeper.
 
         Params:
             name (str): name of the variable
@@ -244,7 +247,7 @@ class ZookeeperCache(CacheManager):
 
         """
         logging.debug("Zookeeper SET variable %s to %s", name, value)
-        return self.zk_client.set(self.map_[name], str(value))
+        return self.zk_client.set(self.map_[name], json.dumps({'val': value}))
 
     def del_var(self, name):
         """Returns the variable string.
