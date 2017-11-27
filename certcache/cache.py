@@ -132,7 +132,7 @@ class Variable(object):
     value = property(m_get, m_set, m_del)
 
 
-class MemoryCache(object):
+class MemoryCache(CacheManager):
 
     """Base cache manager class."""
 
@@ -143,7 +143,7 @@ class MemoryCache(object):
     def get_var(self, name):
         """Method GET for a cached variable."""
         logging.debug("Memory GET variable %s", name)
-        return self.__mem.get(name, "")
+        return self.__mem.get(name")
 
     def set_var(self, name, value):
         """Method SET for a cached variable."""
