@@ -43,6 +43,9 @@ class Container(object):
     def __getattr__(self, name):
         setattr(self, name, None)
         return getattr(self, name)
+    
+    def __repr__(self):
+        return str(vars(self))
 
 
 class ProxyManager(object):
@@ -157,8 +160,6 @@ class ProxyManager(object):
         TO DO:
             - Manage controls (gestisci controlli)
         """
-        bearer = 'Authorization: Bearer ' + \
-            str(self.exchanged_token).split('\n', 1)[0]
         data = json.dumps({"service_id": "x509"})
 
         logging.debug("Create headers and buffers")
@@ -169,7 +170,9 @@ class ProxyManager(object):
         curl = pycurl.Curl()
         curl.setopt(pycurl.URL, self.config.iam.credential_endpoint)
         curl.setopt(pycurl.HTTPHEADER, [
-                    bearer, 'Content-Type: application/json'])
+            'Authorization: Bearer {}'.format(str(self.exchanged_token).split('\n', 1)[0]),
+            'Content-Type: application/json'
+        ])
         curl.setopt(pycurl.POST, 1)
         curl.setopt(pycurl.POSTFIELDS, data)
         curl.setopt(curl.WRITEFUNCTION, buffers.write)
