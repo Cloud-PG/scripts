@@ -23,12 +23,21 @@ import requests
 from urllib3._collections import HTTPHeaderDict
 
 import pycurl
-from cache import *
+from cache import MarathonCache, MemoryCache, ZookeeperCache
 
 if sys.version_info.major == 2:
     from urlparse import urlsplit
 else:
     from urllib.parse import urlsplit
+
+
+class Container(object):
+
+    """Simple object container to simulate JSON obj access."""
+
+    def __getattr__(self, name):
+        setattr(self, name, None)
+        return getattr(self, name)
 
 
 class ProxyManager(object):
@@ -37,37 +46,62 @@ class ProxyManager(object):
 
     def __init__(self, env, cache_manager=None):
         # Get all environment variables
-        self.iam_token = env.get('IAM_TOKEN')
-        self.client_id = env.get('IAM_CLIENT_ID')
-        self.client_secret = env.get('IAM_CLIENT_SECRET')
-        self.marathon = {
-            'user': env.get('MARATHON_USER'),
-            'passwd': env.get('MARATHON_PASSWD')
-        }
+        self.iam = Container()
+        self.iam.token = env.get('IAM_TOKEN')
+        self.iam.client_id = env.get('IAM_CLIENT_ID')
+        self.iam.client_secret = env.get('IAM_CLIENT_SECRET')
+
+        self.marathon = Container()
+        self.marathon.user = env.get('MARATHON_USER'),
+        self.marathon.passwd = env.get('MARATHON_PASSWD')
         # CACHE
         self.cache_dir = '/tmp'
         if cache_manager == 'ZOOKEEPER':
             self.cache = ZookeeperCache(env.get('ZOOKEEPER_HOST_LIST'))
         elif cache_manager == 'MARATHON':
             self.cache = MarathonCache(
-                self.marathon['user'], self.marathon['passwd'])
+                self.marathon.user, self.marathon.passwd)
         else:
             self.cache = MemoryCache()
-        ##
-        self.token_expiration = 600000
-        self.age = 20
-        self.audience = 'https://watts-dev.data.kit.edu'
-        self.tts = 'https://watts-dev.data.kit.edu'
-        self.iam_endpoint = 'https://iam-test.indigo-datacloud.eu/'
-        self.token_endpoint = self.iam_endpoint + 'token'
-        self.introspect_endpoint = self.iam_endpoint + 'introspect'
-        self.credential_endpoint = 'https://watts-dev.data.kit.edu/api/v2/iam/credential'
-        self.tts_output_data = '{}/output.json'.format(self.cache_dir)
-        self.lock_file = "{}/lock".format(self.cache_dir)
-        self.user_cert = "{}/usercert.crt".format(self.cache_dir)
-        self.user_key = "{}/userkey.key".format(self.cache_dir)
-        self.user_passwd = "{}/userpasswd.txt".format(self.cache_dir)
-        self.user_proxy = "{}/userproxy.pem".format(self.cache_dir)
+
+        # PROXY CONFIG FILE
+        config_file_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "proxy_config.json"
+        )
+        with open(config_file_path) as config_file:
+            proxy_config = json.load(config_file)
+
+        # Configuration containers
+        self.config = Container()
+        self.config.access_token = Container()
+        self.config.lock_file = Container()
+        self.config.tts = Container()
+        self.config.iam = Container()
+        self.config.user = Container()
+
+        # Configuration variables
+        self.config.access_token.expiration_time = proxy_config.get(
+            'access_token_expiration_time')
+        self.config.audience = proxy_config.get('audience')
+
+        self.config.lock_file.age = proxy_config.get('lock_file_age')
+        self.config.lock_file.path = "{}/lock".format(self.cache_dir)
+
+        self.config.tts.url = proxy_config.get('tts')
+        self.config.tts.output_data = '{}/output.json'.format(self.cache_dir)
+
+        self.config.iam.endpoint = proxy_config.get('iam_endpoint')
+        self.config.iam.token_endpoint = self.config.iam.endpoint + 'token'
+        self.config.iam.introspect_endpoint = self.config.iam.endpoint + 'introspect'
+        self.config.iam.credential_endpoint = proxy_config.get(
+            'credential_endpoint')
+
+        self.config.user.cert = "{}/usercert.crt".format(self.cache_dir)
+        self.config.user.key = "{}/userkey.key".format(self.cache_dir)
+        self.config.user.passwd = "{}/userpasswd.txt".format(self.cache_dir)
+        self.config.user.proxy = "{}/userproxy.pem".format(self.cache_dir)
+
         self.exchanged_token = ""
 
     def check_tts_data(self):
@@ -79,13 +113,13 @@ class ProxyManager(object):
                 - if it's not up to date -> refresh
                 - else -> exchange token
         """
-        logging.debug("Check tts output data: %s", self.tts_output_data)
-        if os.path.exists(self.tts_output_data):
-            ctime = os.stat(self.tts_output_data).st_ctime
+        logging.debug("Check tts output data: %s", self.config.tts.output_data)
+        if os.path.exists(self.config.tts.output_data):
+            ctime = os.stat(self.config.tts.output_data).st_ctime
             since = time.time() - ctime
             logging.debug("Check expiration time: %s > %s",
-                          since, self.token_expiration)
-            if since > self.token_expiration:
+                          since, self.config.access_token.expiration_time)
+            if since > self.config.access_token.expiration_time:
                 logging.debug("Token about to expire. Get tts data...")
                 tts_data = self.get_tts_data(True)
             else:
@@ -168,7 +202,7 @@ class ProxyManager(object):
                 #   "location: https://watts-dev.data.kit.edu/api/v2/iam/credential_data/xxx"
                 logging.debug("Item url: %s", item)
                 url_path = urlsplit(item.strip().split()[1]).path
-                redirect = self.tts + url_path
+                redirect = self.config.tts.url + url_path
                 logging.debug("Redirect location: %s", redirect)
 
                 headers = {'Authorization': 'Bearer ' +
@@ -204,14 +238,14 @@ class ProxyManager(object):
 
         data = HTTPHeaderDict()
         data.add('grant_type', 'urn:ietf:params:oauth:grant-type:token-exchange')
-        data.add('audience', self.audience)
-        data.add('subject_token', self.iam_token)
+        data.add('audience', self.config.audience)
+        data.add('subject_token', self.iam.token)
         data.add('scope', 'openid profile offline_access')
 
         logging.debug("Call get exchanged token with data: %s", data)
 
-        response = requests.post(self.token_endpoint, data=data, auth=(
-            self.client_id, self.client_secret), verify=True)
+        response = requests.post(self.config.iam.token_endpoint, data=data, auth=(
+            self.iam.client_id, self.iam.client_secret), verify=True)
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
@@ -236,13 +270,13 @@ class ProxyManager(object):
             - Add controls (aggiungi controlli)
         """
 
-        iam_client_id = self.client_id
-        iam_client_secret = self.client_secret
+        iam_client_id = self.iam.client_id
+        iam_client_secret = self.iam.client_secret
 
         data = HTTPHeaderDict()
         data.add('token', exchanged_token)
 
-        response = requests.post(self.introspect_endpoint, data=data, auth=(
+        response = requests.post(self.config.iam.introspect_endpoint, data=data, auth=(
             iam_client_id, iam_client_secret), verify=False)
 
         try:
@@ -264,14 +298,15 @@ class ProxyManager(object):
             - Manage result out of the function (gestisci result fuori dalla funzione)
         """
         data = HTTPHeaderDict()
-        data.add('client_id', self.client_id)
-        data.add('client_secret', self.client_secret)
+        data.add('client_id', self.iam.client_id)
+        data.add('client_secret', self.iam.client_secret)
         data.add('grant_type', 'refresh_token')
         data.add('refresh_token', refresh_token)
 
         logging.debug("Refresh token. data: %s", data)
 
-        response = requests.post(self.token_endpoint, data=data, verify=True)
+        response = requests.post(
+            self.config.iam.token_endpoint, data=data, verify=True)
 
         try:
             response.raise_for_status()
@@ -297,21 +332,21 @@ class ProxyManager(object):
         Params:
             exchange (Bool): indicate if we have to do the exchange
         """
-        logging.debug("Check lock file %s", self.lock_file)
-        if os.path.exists(self.lock_file):
-            ctime = os.stat(self.lock_file).st_ctime
+        logging.debug("Check lock file %s", self.config.lock_file.path)
+        if os.path.exists(self.config.lock_file.path):
+            ctime = os.stat(self.config.lock_file.path).st_ctime
             age = time.time() - ctime
             logging.debug("Check age of %s: %s < %s",
-                          self.lock_file, age, self.age)
-            if age < self.age:
+                          self.config.lock_file.path, age, self.config.lock_file.age)
+            if age < self.config.lock_file.age:
                 logging.debug("Update in progres. Go to sleep...")
-                time.sleep(self.age - age)
+                time.sleep(self.config.lock_file.age - age)
             else:
                 logging.debug("Stale lock file. Removing %s...",
-                              self.lock_file)
-                os.remove(self.lock_file)
-        logging.debug("Update last use time of %s", self.lock_file)
-        open(self.lock_file, 'w+').close()
+                              self.config.lock_file.path)
+                os.remove(self.config.lock_file.path)
+        logging.debug("Update last use time of %s", self.config.lock_file.path)
+        open(self.config.lock_file.path, 'w+').close()
 
         if exchange:
             logging.debug("Exchange /tmp/refresh_token")
@@ -333,34 +368,34 @@ class ProxyManager(object):
                         outf.write(self.cache.refresh_token.value)
 
         logging.debug("Refresh token")
-        if self.get_certificate(self.credential_endpoint):
+        if self.get_certificate(self.config.iam.credential_endpoint):
 
             logging.debug("Load json and prepare objects")
             with open('/tmp/output.json') as tts_data_file:
                 tts_data = json.load(tts_data_file)
 
-            with open(self.user_cert, 'w+') as cur_file:
+            with open(self.config.user.cert, 'w+') as cur_file:
                 cur_file.write(
                     str(tts_data['credential']['entries'][0]['value']))
 
-            with open(self.user_key, 'w+') as cur_file:
+            with open(self.config.user.key, 'w+') as cur_file:
                 cur_file.write(
                     str(tts_data['credential']['entries'][1]['value']))
 
-            with open(self.user_passwd, 'w+') as cur_file:
+            with open(self.config.user.passwd, 'w+') as cur_file:
                 cur_file.write(
                     str(tts_data['credential']['entries'][2]['value']))
 
             try:
                 logging.debug("Change user key mod")
-                os.chmod(self.user_key, 0o600)
+                os.chmod(self.config.user.key, 0o600)
             except OSError as err:
                 logging.error(
                     "Permission denied to chmod passwd file: %s", err)
                 return False
 
             logging.debug("Remove lock")
-            os.remove(self.lock_file)
+            os.remove(self.config.lock_file.path)
 
             return True
 
@@ -373,9 +408,9 @@ class ProxyManager(object):
             logging.debug("Generating proxy for %s", self.exchanged_token)
 
             command = "grid-proxy-init -valid 160:00 -key {} -cert {} -out {} -pwstdin ".format(
-                self.user_key, self.user_cert, self.user_proxy
+                self.config.user.key, self.config.user.cert, self.config.user.proxy
             )
-            with open(self.user_passwd) as my_stdin:
+            with open(self.config.user.passwd) as my_stdin:
                 my_passwd = my_stdin.read()
             proxy_init = subprocess.Popen(
                 command,
@@ -395,7 +430,7 @@ class ProxyManager(object):
                 logging.error("grid-proxy-init failed stdout %s", proxy_out)
                 logging.error("grid-proxy-init failed stderr %s", proxy_err)
             else:
-                return self.user_proxy
+                return self.config.user.proxy
         else:
             logging.error("Error occured in check_tts_data!")
 
@@ -405,7 +440,7 @@ def get():
     logging.info("CALLING GET PROXY")
 
     # imports tokens, id and secret
-    ENV = {
+    environment = {
         'IAM_TOKEN': os.environ.get("IAM_TOKEN", None),
         'IAM_REFRESH_TOKEN': os.environ.get("IAM_REFRESH_TOKEN", None),
         'IAM_CLIENT_ID': os.environ.get("IAM_CLIENT_ID", None),
@@ -416,26 +451,29 @@ def get():
         'CACHE_MANAGER': os.environ.get("CACHE_MANAGER", False)
     }
 
-    logging.info("IAM_TOKEN = %s", ENV.get('IAM_TOKEN'))
-    logging.info("IAM_REFRESH_TOKEN = %s", ENV.get('IAM_REFRESH_TOKEN'))
-    logging.info("IAM_CLIENT_= %s", ENV.get('IAM_CLIENT_ID'))
-    logging.info("IAM_CLIENT_SECRET = %s", ENV.get('IAM_CLIENT_SECRET'))
-    logging.info("MARATHON_USER = %s", ENV.get('MARATHON_USER'))
-    logging.info("MARATHON_PASSWD = %s", ENV.get('MARATHON_PASSWD'))
-    logging.info("ZOOKEEPER_HOST_LIST = %s", ENV.get('ZOOKEEPER_HOST_LIST'))
-    logging.info("CACHE_MANAGER = %s", ENV.get('CACHE_MANAGER'))
+    logging.info("IAM_TOKEN = %s", environment.get('IAM_TOKEN'))
+    logging.info("IAM_REFRESH_TOKEN = %s",
+                 environment.get('IAM_REFRESH_TOKEN'))
+    logging.info("IAM_CLIENT_= %s", environment.get('IAM_CLIENT_ID'))
+    logging.info("IAM_CLIENT_SECRET = %s",
+                 environment.get('IAM_CLIENT_SECRET'))
+    logging.info("MARATHON_USER = %s", environment.get('MARATHON_USER'))
+    logging.info("MARATHON_PASSWD = %s", environment.get('MARATHON_PASSWD'))
+    logging.info("ZOOKEEPER_HOST_LIST = %s",
+                 environment.get('ZOOKEEPER_HOST_LIST'))
+    logging.info("CACHE_MANAGER = %s", environment.get('CACHE_MANAGER'))
 
     cache_manager = None
 
-    if ENV.get('CACHE_MANAGER') == 'ZOOKEEPER' and ENV.get('ZOOKEEPER_HOST_LIST') is not None:
+    if environment.get('CACHE_MANAGER') == 'ZOOKEEPER' and environment.get('ZOOKEEPER_HOST_LIST') is not None:
         cache_manager = 'ZOOKEEPER'
-    elif ENV.get('CACHE_MANAGER') == 'MARATHON' and ENV.get('MARATHON_USER') is not None and ENV.get('MARATHON_PASSWD') is not None:
+    elif environment.get('CACHE_MANAGER') == 'MARATHON' and environment.get('MARATHON_USER') is not None and environment.get('MARATHON_PASSWD') is not None:
         cache_manager = 'MARATHON'
-    elif ENV.get('CACHE_MANAGER'):
+    elif environment.get('CACHE_MANAGER'):
         # CACHE MANAGER is set and is not recognized
         raise Exception("Unknown CACHE MANAGER")
 
-    proxy_manager = ProxyManager(ENV, cache_manager)
+    proxy_manager = ProxyManager(environment, cache_manager)
     proxy_file = proxy_manager.generate_proxy()
 
     if proxy_file is not None:
@@ -446,9 +484,9 @@ def get():
         with open(proxy_file, 'rb') as file_:
             data = file_.read()
         return header, data
-    else:
-        logging.error("Cannot find Proxy file: '%s'", proxy_file)
-        header = {
-            'Content-Type': "text/html"
-        }
-        return header, "<p>grid-proxy-info failed</p>"
+
+    logging.error("Cannot find Proxy file: '%s'", proxy_file)
+    header = {
+        'Content-Type': "text/html"
+    }
+    return header, "<p>grid-proxy-info failed</p>"
