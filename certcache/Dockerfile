@@ -6,7 +6,8 @@ LABEL Version=0.2
 
 # UPDATE SYSTEM AND INSTALL WGET
 RUN yum --setopt=tsflags=nodocs -y update \
-    && yum --setopt=tsflags=nodocs -y install wget
+    && yum --setopt=tsflags=nodocs -y install wget \
+    && yum clean all
 
 WORKDIR /etc/yum.repos.d
 RUN wget http://repository.egi.eu/community/software/preview.repository/2.0/releases/repofiles/centos-7-x86_64.repo \
@@ -26,7 +27,7 @@ RUN yum --setopt=tsflags=nodocs -y install python python-pip \
     && mkdir -p /opt/certcache/ \
     && mkdir -p /var/log/certcache/ \
     && touch /var/log/certcache/app.log
-COPY ./proxy.py ./cache.py ./app_certcache.py /opt/certcache/
+COPY ./proxy_config.json ./proxy.py ./cache.py ./app_certcache.py /opt/certcache/
 
 EXPOSE 80
 
