@@ -168,7 +168,7 @@ class ProxyManager(object):
 
         logging.debug("Prepare CURL")
         curl = pycurl.Curl()
-        curl.setopt(pycurl.URL, self.config.iam.credential_endpoint)
+        curl.setopt(pycurl.URL, str(self.config.iam.credential_endpoint))
         curl.setopt(pycurl.HTTPHEADER, [
             'Authorization: Bearer {}'.format(str(self.exchanged_token).split('\n', 1)[0]),
             'Content-Type: application/json'
