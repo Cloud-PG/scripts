@@ -144,7 +144,7 @@ class ProxyManager(object):
 
         return tts_data
 
-    def get_certificate(self, url):
+    def get_certificate(self):
         """Retrieve the certificate.
 
         Returns:
@@ -167,7 +167,7 @@ class ProxyManager(object):
 
         logging.debug("Prepare CURL")
         curl = pycurl.Curl()
-        curl.setopt(pycurl.URL, url)
+        curl.setopt(pycurl.URL, self.config.iam.credential_endpoint)
         curl.setopt(pycurl.HTTPHEADER, [
                     bearer, 'Content-Type: application/json'])
         curl.setopt(pycurl.POST, 1)
@@ -369,7 +369,7 @@ class ProxyManager(object):
                         outf.write(self.cache.refresh_token.value)
 
         logging.debug("Refresh token")
-        if self.get_certificate(self.config.iam.credential_endpoint):
+        if self.get_certificate():
 
             logging.debug("Load json and prepare objects")
             with open('/tmp/output.json') as tts_data_file:
