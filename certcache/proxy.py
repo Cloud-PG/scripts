@@ -31,6 +31,11 @@ else:
     from urllib.parse import urlsplit
 
 
+CONFIG_FILE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "proxy_config.json"
+)
+
 class Container(object):
 
     """Simple object container to simulate JSON obj access."""
@@ -64,12 +69,8 @@ class ProxyManager(object):
         else:
             self.cache = MemoryCache()
 
-        # PROXY CONFIG FILE
-        config_file_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "proxy_config.json"
-        )
-        with open(config_file_path) as config_file:
+        # LOAD PROXY CONFIG FILE
+        with open(CONFIG_FILE_PATH) as config_file:
             proxy_config = json.load(config_file)
 
         # Configuration containers
@@ -451,6 +452,15 @@ def get():
         'CACHE_MANAGER': os.environ.get("CACHE_MANAGER", False)
     }
 
+    # Store environment in config file
+    with open(CONFIG_FILE_PATH) as config_file:
+        proxy_config = json.load(config_file)
+    
+    proxy_config['environment'] = environment
+    with open(CONFIG_FILE_PATH, "w") as config_file:
+        json.dump(proxy_config, config_file)
+
+    # Logging environment
     logging.info("IAM_TOKEN = %s", environment.get('IAM_TOKEN'))
     logging.info("IAM_REFRESH_TOKEN = %s",
                  environment.get('IAM_REFRESH_TOKEN'))
