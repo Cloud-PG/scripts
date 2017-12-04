@@ -282,13 +282,12 @@ class ZookeeperCache(CacheManager):
         Params:
             name (str): the name of the variable
             variable (Variable): obj variable
-
-        Returns:
-            kazoo.protocol.states.ZnodeStat
         """
         logging.debug("Create Zookeeper node for %s", name)
         self.zk_client.ensure_path(self.map_[name])
-        return self.zk_client.set(self.map_[name], json.dumps({'val': None}))
+        val, _ = self.zk_client.get(self.map_[name])
+        if not val:
+            self.zk_client.set(self.map_[name], json.dumps({'val': None}))
 
     def init(self, zookeeper_host_list):
         """Parse and save zookeeper host list string.
