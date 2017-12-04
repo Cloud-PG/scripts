@@ -244,7 +244,6 @@ class ZookeeperCache(CacheManager):
 
         Returns:
             kazoo.protocol.states.ZnodeStat
-
         """
         logging.debug("Zookeeper SET variable %s to %s", name, value)
         return self.zk_client.set(self.map_[name], json.dumps({'val': value}))
@@ -285,10 +284,11 @@ class ZookeeperCache(CacheManager):
             variable (Variable): obj variable
 
         Returns:
-            IAsyncResult
+            kazoo.protocol.states.ZnodeStat
         """
         logging.debug("Create Zookeeper node for %s", name)
-        return self.zk_client.ensure_path(self.map_[name])
+        self.zk_client.ensure_path(self.map_[name])
+        return self.zk_client.set(self.map_[name], json.dumps({'val': None}))
 
     def init(self, zookeeper_host_list):
         """Parse and save zookeeper host list string.
@@ -408,7 +408,7 @@ class MarathonCache(CacheManager):
             variable: the value of the variable
         """
         logging.debug("Marathon GET variable %s", name)
-        return self.__cache.get(name, "")
+        return self.__cache.get(name, None)
 
     def set_var(self, name, value):
         """Set the variable into the zookeeper environment.

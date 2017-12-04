@@ -30,7 +30,7 @@ class TestCacheModule(unittest.TestCase):
         cache_ = ZookeeperCache("['127.0.0.1']")
         variable_name = "myvar" + str(randint(0, 100))
         variable = cache_.add_variable(variable_name)
-        self.assertEqual(variable.value, "")
+        self.assertEqual(variable.value, None)
 
     def test_set_variable(self):
         """Zookeeper cache init set variable."""
@@ -38,6 +38,9 @@ class TestCacheModule(unittest.TestCase):
         variable = cache_.my_var
         random_int = randint(0, 100)
         variable.value = random_int
+        self.assertEqual(variable.value, random_int)
+        random_int = randint(0, 100)
+        variable.value = str(random_int)
         self.assertEqual(variable.value, str(random_int))
 
     def test_del_variable(self):

@@ -135,7 +135,7 @@ class ProxyManager(object):
             if isinstance(self.exchanged_token, int):
                 logging.error("Get exchange token error: %s",
                               self.exchanged_token)
-                if self.cache.refresh_token.value == '':
+                if self.cache.refresh_token.value == None:
                     logging.error("Problem with Token Server")
                     return False
                 else:
@@ -354,7 +354,7 @@ class ProxyManager(object):
 
         if exchange:
             logging.debug("Exchange /tmp/refresh_token")
-            if self.cache.refresh_token.value == "":
+            if self.cache.refresh_token.value == None:
                 with file('/tmp/refresh_token') as refresh_t_file:
                     refresh_token = refresh_t_file.read()
                     logging.debug("Refresh token")
