@@ -1,4 +1,5 @@
-#!/bin/env python
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
 """This script requires the following environment variables:
 
   - IAM_TOKEN
@@ -114,25 +115,18 @@ class ProxyManager(object):
         """Checks and refresh tts data.
         
         .. note::
-        Workflow:
+            Workflow:
             
-        [?] Check tts output data file
-         |
-         |--(YES)-> [?] Check if expired
-         |           |
-         |           |--(YES)-> get_tts_data(True)
-         |           |
-         |           |--(NO)-> Token OK
-         |
-         |--(NO)-> [CALL] get_exchange_token
-                     |
-                     |--(OK, return (str) exchange_token) get_tts_data(exchange_token)
-                     |
-                     |--(FAIL, return int) [?] Check CACHE for refresh token
-                                            |
-                                            |--(YES) get_tts_data(True) [True to use refresh token]
-                                            |
-                                            |--(NO) ERROR
+            - Check tts output data file
+                - if YES -> Check if expired
+                    - if YES -> get_tts_data(True)
+                    - if NO  -> Token OK
+                - if NO -> get_exchange_token()
+                    - if OK [returns (str) exchange_token] 
+                        - get_tts_data(exchange_token)
+                    - if FAILS [returns int] -> Check CACHE for refresh token
+                        - if YES -> get_tts_data(True) [True to use refresh token]
+                        - if NO  -> ERROR
 
         """
         logging.debug("Check tts output data: %s", self.config.tts.output_data)

@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
 """Module for caching variables in different stores."""
 import json
 import logging
@@ -318,13 +320,14 @@ class ZookeeperCache(CacheManager):
 
     def init(self, zookeeper_host_list):
         """Parse and save zookeeper host list string.
-        
+
         This function tries also to add the default port
         when is not present in the host address.
-        
+
         The list is normally retreived from the envirnment
         variables where is stored as a string like:
-            - ZOOKEEPER_HOST_LIST="['10.1.4.2']"
+        
+        ZOOKEEPER_HOST_LIST="['10.1.4.2']"
 
         :param zookeeper_host_list: str
         :returns: self
@@ -350,15 +353,17 @@ class ZookeeperCache(CacheManager):
         Check KazooClient_ for more information.
         
         .. hint::
-          host1:port1,host2:port2,host3:port3
+            host1:port1,host2:port2,host3:port3
 
 
         :returns: self
         
         .. note::
-          In zookeeper cms cluser are present these children from root ("/") node:
-             ["marathon", "mesos", "zookeeper"]
-          So path like "/marathon", "/mesos", "/zookeeper" are already available
+            In zookeeper cms cluser are present these children from root ("/") node:
+            
+            ["marathon", "mesos", "zookeeper"]
+            
+            So path like "/marathon", "/mesos", "/zookeeper" are already available
         
         .. _KazooClient: https://kazoo.readthedocs.io/en/latest/api/client.html#kazoo.client.KazooClient
 
