@@ -11,7 +11,12 @@ APP = Flask(__name__)
 @APP.route('/get_proxy', methods=['GET'])
 @APP.route('/cgi-bin/get_proxy', methods=['GET'])
 def certcache_get_proxy():
-    """Return the get_proxy content."""
+    """Get the proxy.
+
+
+    :returns: the get_proxy content.
+
+    """
     if request.method == 'GET':
         logging.debug("GET request")
         header, body = get_proxy()

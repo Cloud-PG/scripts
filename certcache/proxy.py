@@ -5,8 +5,10 @@
   - IAM_REFRESH_TOKEN
   - IAM_CLIENT_ID
   - IAM_CLIENT_SECRET
-  - MARATHON_USER
-  - MARATHON_PASSWD
+  - MARATHON_USER (used if Marathon cache manager is selected)
+  - MARATHON_PASSWD (used if Marathon cache manager is selected)
+  - ZOOKEEPER_HOST_LIST (used if Zookeeper cache manager is selected)
+  - CACHE_MANAGER [ZOOKEEPER, MARATHON, MEMORY]
 
 """
 from __future__ import print_function
@@ -110,12 +112,28 @@ class ProxyManager(object):
 
     def check_tts_data(self):
         """Checks and refresh tts data.
-
+        
+        .. note::
         Workflow:
-            - Check cached TTS data
-                - if exists and it's up to date -> ok
-                - if it's not up to date -> refresh
-                - else -> exchange token
+            
+        [?] Check tts output data file
+         |
+         |--(YES)-> [?] Check if expired
+         |           |
+         |           |--(YES)-> get_tts_data(True)
+         |           |
+         |           |--(NO)-> Token OK
+         |
+         |--(NO)-> [CALL] get_exchange_token
+                     |
+                     |--(OK, return (str) exchange_token) get_tts_data(exchange_token)
+                     |
+                     |--(FAIL, return int) [?] Check CACHE for refresh token
+                                            |
+                                            |--(YES) get_tts_data(True) [True to use refresh token]
+                                            |
+                                            |--(NO) ERROR
+
         """
         logging.debug("Check tts output data: %s", self.config.tts.output_data)
         if os.path.exists(self.config.tts.output_data):
@@ -150,15 +168,13 @@ class ProxyManager(object):
     def get_certificate(self):
         """Retrieve the certificate.
 
-        Returns:
-            The given tts token
+        :returns: The given tts token
+        :raises requests.exceptions: possible on redirect
+        :raises pycurl.exceptions: during the call of iam credential endpoint
+        
+        .. todo::
+            Manage controls (gestisci controlli)
 
-        Raises:
-            - redirect errors
-            - curl errors
-
-        TO DO:
-            - Manage controls (gestisci controlli)
         """
         data = json.dumps({"service_id": "x509"})
 
@@ -230,12 +246,13 @@ class ProxyManager(object):
 
     def get_exchange_token(self):
         """Retrieve the access token.
-
+        
         Exchange the access token with the given client id and secret.
         The refresh token in cached and the exchange token is kept in memory.
+        
+        .. todo::
+            Add controls (aggiungi controlli)
 
-        TO DO:
-            - Add controls (aggiungi controlli)
         """
 
         logging.debug("Prepare header")
@@ -269,9 +286,14 @@ class ProxyManager(object):
 
     def introspection(self, iam_client_id, iam_client_secret, exchanged_token):
         """Get info through introspection with the given client id, secret and token.
+        
+        .. todo::
+            Add controls (aggiungi controlli)
 
-        TO DO:
-            - Add controls (aggiungi controlli)
+        :param iam_client_id: param iam_client_secret:
+        :param exchanged_token: 
+        :param iam_client_secret: 
+
         """
 
         iam_client_id = self.iam.client_id
@@ -297,9 +319,12 @@ class ProxyManager(object):
 
     def refresh_token(self, refresh_token):
         """Request with refresh token.
+        
+        .. todo::
+            Manage result out of the function (gestisci result fuori dalla funzione)
 
-        TO DO:
-            - Manage result out of the function (gestisci result fuori dalla funzione)
+        :param refresh_token: 
+
         """
         data = HTTPHeaderDict()
         data.add('client_id', self.iam.client_id)
@@ -327,14 +352,14 @@ class ProxyManager(object):
 
     def get_tts_data(self, exchange=False):
         """Get TTS data using a lock procedure.
-
+        
         Phases:
             - get lock
             - retrieve_tts_data
             - release lock
 
-        Params:
-            exchange (Bool): indicate if we have to do the exchange
+        :param exchange: Bool (Default value = False)
+
         """
         logging.debug("Check lock file %s", self.config.lock_file.path)
         if os.path.exists(self.config.lock_file.path):
